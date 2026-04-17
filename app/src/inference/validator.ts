@@ -141,6 +141,7 @@ export async function validateCitations(input: ValidateInput): Promise<Validatio
         continue;
       }
     }
+    if (!dump) continue;
 
     const authorDisplay = displayByUuid.get(dump.author) ?? dump.author;
     const citedAuthor = c.author.toLowerCase();
