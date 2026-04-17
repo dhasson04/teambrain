@@ -74,6 +74,33 @@ export interface ProjectMeta {
 
 export interface SubprojectMeta extends ProjectMeta {}
 
+export interface MaterialMeta {
+  filename: string;
+  bytes: number;
+  title: string;
+  source: string;
+  added_by: string;
+  added_at: string;
+}
+
+export interface DumpMeta {
+  id: string;
+  bytes: number;
+  hash: string;
+  author: string;
+  created: string;
+  updated: string;
+}
+
+export interface DumpFull extends DumpMeta {
+  body: string;
+}
+
+export interface ProblemDoc {
+  data: { updated: string; updated_by: string } | null;
+  body: string;
+}
+
 export const apiClient = {
   health: () => api<{ ok: boolean; ollama: string; model_loaded: string | null }>("/api/health", { skipProfile: true }),
 
@@ -95,5 +122,36 @@ export const apiClient = {
     api<SubprojectMeta>(`/api/projects/${project}/subprojects`, {
       method: "POST",
       body: { display_name },
+    }),
+
+  getProblem: (project: string, sub: string) =>
+    api<ProblemDoc>(`/api/projects/${project}/subprojects/${sub}/problem`),
+  putProblem: (project: string, sub: string, content: string) =>
+    api<{ ok: true }>(`/api/projects/${project}/subprojects/${sub}/problem`, {
+      method: "PUT",
+      body: { content },
+    }),
+
+  listMaterials: (project: string, sub: string) =>
+    api<{ materials: MaterialMeta[] }>(`/api/projects/${project}/subprojects/${sub}/materials`),
+  addMaterial: (project: string, sub: string, filename: string, content: string) =>
+    api<MaterialMeta>(`/api/projects/${project}/subprojects/${sub}/materials`, {
+      method: "POST",
+      body: { filename, content },
+    }),
+
+  listMyDumps: (project: string, sub: string) =>
+    api<{ dumps: DumpFull[] }>(`/api/projects/${project}/subprojects/${sub}/dumps?author=me`),
+  listAllDumpsMeta: (project: string, sub: string) =>
+    api<{ dumps: DumpMeta[] }>(`/api/projects/${project}/subprojects/${sub}/dumps?author=all`),
+  createDump: (project: string, sub: string, content: string) =>
+    api<DumpFull>(`/api/projects/${project}/subprojects/${sub}/dumps`, {
+      method: "POST",
+      body: { content },
+    }),
+  patchDump: (project: string, sub: string, id: string, content: string) =>
+    api<DumpFull>(`/api/projects/${project}/subprojects/${sub}/dumps/${id}`, {
+      method: "PATCH",
+      body: { content },
     }),
 };

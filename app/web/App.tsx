@@ -1,6 +1,8 @@
 import { AppShell } from "./components/AppShell";
 import { Sidebar } from "./components/Sidebar";
 import { SubprojectView } from "./components/SubprojectView";
+import { DumpTab } from "./components/SubprojectView/DumpTab";
+import { MainTab } from "./components/SubprojectView/MainTab";
 import { useBootstrap, useProjectsStore } from "./lib/stores";
 
 function PlaceholderPanel({ title, body }: { title: string; body: string }) {
@@ -38,12 +40,8 @@ export function App() {
         <SubprojectView
           project={activeProject}
           sub={activeSub}
-          renderMain={() => (
-            <PlaceholderPanel title="Main tab" body="Problem statement + materials + activity feed land in T010." />
-          )}
-          renderDump={() => (
-            <PlaceholderPanel title="My Dump tab" body="CodeMirror composer + your past dumps land in T011." />
-          )}
+          renderMain={() => <MainTab project={activeProject} sub={activeSub} />}
+          renderDump={() => <DumpTab project={activeProject} sub={activeSub} />}
           renderGraph={() => (
             <PlaceholderPanel title="Connections tab" body="react-flow knowledge graph lands in T012." />
           )}
