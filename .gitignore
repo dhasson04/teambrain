@@ -1,0 +1,26 @@
+# Forge runtime state (per-developer)
+.forge/state.md
+.forge/state.json
+.forge/progress/
+.forge/worktrees/
+.forge/.forge-loop.lock
+.forge/token-ledger.json
+.forge/resume.md
+.forge/handoff/
+.forge/synthesis-log.jsonl
+.forge/checkpoints/
+.forge/history/
+
+# Runtime data — never commit dumps or synthesis output
+vault/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.log
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
