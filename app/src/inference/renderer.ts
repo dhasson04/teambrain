@@ -1,4 +1,6 @@
+import type { AttributionFile } from "../vault/ideas";
 import { readIdeasBundle } from "../vault/ideas";
+import { loadProfiles } from "../vault/profiles";
 import { writeSynthesis } from "../vault/synthesis";
 import type { DumpHashEntry } from "../vault/synthesis";
 import type { InferenceService } from "./inference-service";
@@ -23,9 +25,25 @@ exactly three sections:
 
 Hard rules:
 - Every bullet must end with at least one [Author, dump-id] citation in that exact format
+- Author is the human display name (e.g. "Alice"), exactly as it appears in the attribution's "author" field — never a UUID.
+- dump-id is the FULL string in the attribution's "dump_id" field including any timestamp suffix — copy it verbatim, do not truncate.
 - Use the verbatim_quote from attribution where you reference the dump
 - Output the markdown directly. No preamble, no JSON, no code fences around the document.
 `;
+
+async function attributionWithDisplayNames(raw: AttributionFile): Promise<AttributionFile> {
+  const profiles = await loadProfiles();
+  const nameById = new Map(profiles.profiles.map((p) => [p.id, p.display_name]));
+  const out: AttributionFile = {};
+  for (const [ideaId, entries] of Object.entries(raw)) {
+    out[ideaId] = entries.map((e) => ({
+      dump_id: e.dump_id,
+      author: nameById.get(e.author) ?? e.author,
+      verbatim_quote: e.verbatim_quote,
+    }));
+  }
+  return out;
+}
 
 export interface RenderInput {
   service: InferenceService;
@@ -53,7 +71,7 @@ export async function renderSynthesis(input: RenderInput): Promise<RenderResult>
     {
       ideas: bundle.ideas.ideas,
       connections: bundle.connections.connections,
-      attribution: bundle.attribution,
+      attribution: await attributionWithDisplayNames(bundle.attribution),
     },
     null,
     2,
@@ -61,6 +79,7 @@ export async function renderSynthesis(input: RenderInput): Promise<RenderResult>
 
   let lastBody = "";
   let lastComplaints: string[] = [];
+  let priorComplaints: string[] | null = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const userMsg =
       attempt === 0
@@ -91,6 +110,20 @@ export async function renderSynthesis(input: RenderInput): Promise<RenderResult>
       );
       return { ok: true, body, attempts: attempt + 1, validatorComplaints: [] };
     }
+    // Short-circuit: if the model produced the same complaint set as the prior
+    // attempt, more retries with the same repair prompt won't yield new info.
+    if (priorComplaints && sameComplaints(priorComplaints, lastComplaints)) {
+      break;
+    }
+    priorComplaints = lastComplaints;
   }
   return { ok: false, body: lastBody, attempts: maxRetries + 1, validatorComplaints: lastComplaints };
+}
+
+function sameComplaints(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return false;
+  return true;
 }
