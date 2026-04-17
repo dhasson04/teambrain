@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+:root {
+  --background: #161616;
+  --surface: #1c1c1c;
+  --surface-elevated: #232323;
+  --surface-overlay: #2a2a2a;
+  --border: #2d2d2d;
+  --border-light: #3a3a3a;
+  --text-primary: #e8e8e8;
+  --text-secondary: #a8a8a8;
+  --text-muted: #6e6e6e;
+  --accent: #a78bfa;
+  --accent-strong: #8b5cf6;
+  --accent-tint: #1e1832;
+  --accent-secondary: #c2553d;
+  --accent-secondary-tint: #2a1410;
+  --agreement: #6a9b7a;
+  --contradiction: #c66b6b;
+  --info: #6a8db8;
+  --warning: #d4a76a;
+
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, Monaco, monospace;
+
+  --easing-default: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-micro: 120ms;
+  --duration-default: 200ms;
+  --duration-page: 320ms;
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-border: var(--border);
+  --color-border-light: var(--border-light);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-secondary: var(--accent-secondary);
+  --color-agreement: var(--agreement);
+  --color-contradiction: var(--contradiction);
+  --color-info: var(--info);
+  --color-warning: var(--warning);
+
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--background);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+@keyframes pulse-ring {
+  0% { opacity: 0.7; }
+  50% { opacity: 0.2; }
+  100% { opacity: 0.7; }
+}
+.pulse-ring { animation: pulse-ring 1.6s ease-in-out infinite; }
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.cursor-blink { animation: blink 1s step-end infinite; }
