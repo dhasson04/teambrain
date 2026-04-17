@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { loadConfig } from "../server/config";
 import {
   type AttributionEntry,
   type AttributionFile,
@@ -9,6 +10,8 @@ import {
   type IdeasFile,
   writeIdeasBundle,
 } from "../vault/ideas";
+import { clusterIdeas } from "./clustering";
+import { embed } from "./embeddings";
 import type { AttributedIdea } from "./extractor";
 import type { InferenceService } from "./inference-service";
 
@@ -150,15 +153,65 @@ function compactIdeasForPrompt(ideas: AssignedIdea[]): string {
     .join("\n");
 }
 
+/**
+ * R002 replacement path: deterministic embedding clustering.
+ *
+ * When features.embedding_cluster is enabled (default), we skip the LLM
+ * merge call entirely. Ideas are embedded via MiniLM; clusters come from
+ * single-linkage agglomerative over cosine similarity at
+ * config.cluster_threshold. Contradictions are NOT produced here — they
+ * move to a dedicated NLI pass in R003 (nli.ts).
+ *
+ * Output matches MergeResponse so the downstream pipeline is unchanged.
+ */
+async function mergeViaEmbedding(
+  assigned: AssignedIdea[],
+  threshold: number,
+): Promise<MergeResponse> {
+  const result = await clusterIdeas(assigned, embed, threshold);
+  const clusters = result.clusters.map((c) => ({
+    cluster_id: c.cluster_id,
+    member_idea_ids: c.member_idea_ids,
+  }));
+  // Build agree edges between all pairs within a cluster.
+  const edges: Array<{ from: string; to: string; kind: "agree" | "contradict" | "related"; weight: number }> = [];
+  for (const c of result.clusters) {
+    for (let i = 0; i < c.member_idea_ids.length; i++) {
+      for (let j = i + 1; j < c.member_idea_ids.length; j++) {
+        edges.push({
+          from: c.member_idea_ids[i]!,
+          to: c.member_idea_ids[j]!,
+          kind: "agree",
+          weight: 0.8,
+        });
+      }
+    }
+  }
+  return {
+    clusters,
+    contradictions: [], // NLI pass in R003 fills this in a separate step.
+    edges,
+  };
+}
+
 export async function mergeIdeas(input: MergeInput): Promise<MergeOutput> {
   const assigned = assignIdeaIds(input.attributed);
-  const userMsg = `${MERGE_INSTRUCTIONS}\n\n<ideas>\n${compactIdeasForPrompt(assigned)}\n</ideas>`;
-  const raw = await input.service.runToString({
-    persona_id: "synthesis",
-    format: MERGE_FORMAT,
-    messages: [{ role: "user", content: userMsg }],
-  });
-  const parsed = MergeResponseSchema.parse(JSON.parse(raw));
+  const cfg = loadConfig();
+
+  let parsed: MergeResponse;
+  if (cfg.features?.embedding_cluster !== false) {
+    // R002: deterministic path.
+    parsed = await mergeViaEmbedding(assigned, cfg.cluster_threshold ?? 0.55);
+  } else {
+    // Legacy LLM merge — kept in-tree for rollback / comparison.
+    const userMsg = `${MERGE_INSTRUCTIONS}\n\n<ideas>\n${compactIdeasForPrompt(assigned)}\n</ideas>`;
+    const raw = await input.service.runToString({
+      persona_id: "synthesis",
+      format: MERGE_FORMAT,
+      messages: [{ role: "user", content: userMsg }],
+    });
+    parsed = MergeResponseSchema.parse(JSON.parse(raw));
+  }
 
   const idById = new Map(assigned.map((i) => [i.idea_id, i]));
   const validIds = new Set(idById.keys());

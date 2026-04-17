@@ -54,6 +54,9 @@ describe("runPipeline", () => {
     // Three canned LLM responses: extract, merge, render
     const dumps = await (await import("../vault/dumps")).listDumps("acme", "q2", { includeBody: true });
     const dumpId = (dumps[0] as { id: string }).id;
+    // T006/R002: merger no longer calls the LLM; the embedding-clustering
+    // path runs deterministically. Only extract + render need canned
+    // responses.
     const svc = new FakeService([
       // extract
       JSON.stringify({
@@ -66,14 +69,7 @@ describe("runPipeline", () => {
           },
         ],
       }),
-      // merge
-      JSON.stringify({
-        clusters: [{ cluster_id: "c1", member_idea_ids: [`${dumpId}-i0`] }],
-        contradictions: [],
-        edges: [],
-      }),
-      // render — T002/R001: renderer now emits structured JSON; the
-      // module assembles markdown server-side.
+      // render — structured JSON per T002/R001
       JSON.stringify({
         agreed: [
           {
