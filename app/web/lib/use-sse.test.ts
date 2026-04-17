@@ -54,7 +54,7 @@ describe("SSE parser", () => {
 // received multiple full synthesis pipeline runs after a single Re-synthesize
 // click. Assert at source level that useSSE has no auto-restart path.
 // See spec-ui.md R010.
-describe.skip("useSSE (backprop-5, BUG-5 — no client-side auto-restart)", () => {
+describe("useSSE (backprop-5, BUG-5 — no client-side auto-restart)", () => {
   test("source does not call start() from inside a useEffect body", () => {
     const src = readFileSync(resolve(import.meta.dir, "use-sse.ts"), "utf8");
     const effectBodies = src.match(/useEffect\(\s*\(\)\s*=>\s*\{([\s\S]*?)\}\s*,/g) ?? [];

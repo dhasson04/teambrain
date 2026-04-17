@@ -1,3 +1,9 @@
+// INVARIANT (backprop-5, spec-ui.md R010): this hook is strictly user-driven
+// after mount. `start()` is ONLY called from (a) a consumer's explicit click
+// handler, or (b) the mount-time effect guarded by `options.auto`. It is
+// never called from `catch`/`finally`, never called when `status` transitions
+// to "done" or "error", and never called from any effect that depends on
+// mutable props. A single user click must produce exactly one backend run.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface SSEEvent<T = unknown> {
@@ -120,6 +126,9 @@ export function useSSE(options: UseSSEOptions): UseSSEResult {
         }
         setStatus("done");
       } catch (e) {
+        // Never re-invoke the start function from this block — this hook is
+        // strictly user-driven after mount; the consumer decides whether to
+        // retry on error.
         if ((e as Error).name === "AbortError") {
           setStatus("idle");
           return;
