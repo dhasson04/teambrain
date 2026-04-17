@@ -74,7 +74,7 @@ describe.skip("useSSE (backprop-5, BUG-5 — no client-side auto-restart)", () =
 // Regression: backprop-4, BUG-4 — phase label never advanced past "extracting…"
 // during a 3-4 minute pipeline because Vite's dev proxy byte-buffered the
 // SSE proxy response. See spec-ui.md R010.
-describe.skip("vite.config.ts (backprop-4, BUG-4 — SSE passthrough on /api)", () => {
+describe("vite.config.ts (backprop-4, BUG-4 — SSE passthrough on /api)", () => {
   test("/api proxy disables response buffering for SSE", () => {
     const src = readFileSync(resolve(import.meta.dir, "../../vite.config.ts"), "utf8");
     expect(src).toMatch(/configure\s*:\s*\(/);
