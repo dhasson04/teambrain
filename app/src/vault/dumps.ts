@@ -75,7 +75,7 @@ export async function createDump(project: string, sub: string, author: string, b
   await ensureDir(dumpsDir(project, sub));
   const out = serializeFrontmatter(fm, body);
   await atomicWriteFile(dumpPath(project, sub, id), out);
-  const hash = blake3hex(body);
+  const hash = blake3hex(body.trim());
   const hashes = await loadChunkHashes(project, sub);
   hashes[id] = hash;
   await saveChunkHashes(project, sub, hashes);
@@ -113,7 +113,7 @@ export async function updateDump(project: string, sub: string, id: string, body:
   const fm: DumpFrontmatter = { ...existing.data, updated: new Date().toISOString() };
   const out = serializeFrontmatter(fm, body);
   await atomicWriteFile(path, out);
-  const hash = blake3hex(body);
+  const hash = blake3hex(body.trim());
   const hashes = await loadChunkHashes(project, sub);
   hashes[id] = hash;
   await saveChunkHashes(project, sub, hashes);
@@ -149,7 +149,7 @@ export async function listDumps(
     const file = await readDumpFile(`${dir}/${e.name}`);
     if (!file) continue;
     if (options.author && file.data.author !== options.author) continue;
-    const hash = blake3hex(file.body);
+    const hash = blake3hex(file.body.trim());
     const meta: DumpMeta = {
       id,
       bytes: file.bytes,
