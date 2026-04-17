@@ -12,7 +12,8 @@
 .forge/history/
 
 # Runtime data — never commit dumps or synthesis output
-vault/
+# (anchored to repo root so app/src/vault/ source code is still tracked)
+/vault/
 
 # Node
 node_modules/
