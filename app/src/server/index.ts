@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { initVault } from "../vault/init";
+import { profilesRoutes } from "./routes/profiles";
 
 export function createApp(): Hono {
   const app = new Hono();
@@ -11,6 +12,8 @@ export function createApp(): Hono {
       version: "0.1.0",
     }),
   );
+
+  app.route("/api/profiles", profilesRoutes());
 
   return app;
 }
