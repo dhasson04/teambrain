@@ -3,8 +3,9 @@
     "target": "ES2023",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["bun"],
+    "jsx": "react-jsx",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -17,5 +18,5 @@
     "noEmit": true,
     "allowImportingTsExtensions": false
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "web/**/*.ts", "web/**/*.tsx", "vite.config.ts"]
 }
