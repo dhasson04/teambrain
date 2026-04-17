@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { initVault } from "../vault/init";
 import { profilesRoutes } from "./routes/profiles";
 import { projectsRoutes } from "./routes/projects";
+import { subprojectsRoutes } from "./routes/subprojects";
 
 export function createApp(): Hono {
   const app = new Hono();
@@ -16,6 +17,7 @@ export function createApp(): Hono {
 
   app.route("/api/profiles", profilesRoutes());
   app.route("/api/projects", projectsRoutes());
+  app.route("/api", subprojectsRoutes());
 
   return app;
 }
