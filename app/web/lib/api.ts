@@ -1,0 +1,99 @@
+export const PROFILE_HEADER = "X-Profile-Id";
+
+export class ApiError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+let activeProfileId: string | null = null;
+
+export function setActiveProfileId(id: string | null): void {
+  activeProfileId = id;
+  if (id) localStorage.setItem("teambrain.profile_id", id);
+  else localStorage.removeItem("teambrain.profile_id");
+}
+
+export function getActiveProfileId(): string | null {
+  if (activeProfileId) return activeProfileId;
+  const stored = typeof window !== "undefined" ? localStorage.getItem("teambrain.profile_id") : null;
+  if (stored) activeProfileId = stored;
+  return activeProfileId;
+}
+
+export interface ApiOptions extends Omit<RequestInit, "body"> {
+  body?: unknown;
+  /** Skip the X-Profile-Id header even on writes (for auth-less reads). */
+  skipProfile?: boolean;
+}
+
+export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
+  const headers = new Headers(opts.headers);
+  if (!opts.skipProfile) {
+    const id = getActiveProfileId();
+    if (id) headers.set(PROFILE_HEADER, id);
+  }
+  let body: BodyInit | undefined;
+  if (opts.body !== undefined) {
+    if (typeof opts.body === "string" || opts.body instanceof FormData) {
+      body = opts.body;
+    } else {
+      headers.set("content-type", "application/json");
+      body = JSON.stringify(opts.body);
+    }
+  }
+  const res = await fetch(path, { ...opts, headers, body });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const errBody = (await res.json()) as { error?: string };
+      detail = errBody.error ?? "";
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, detail || `HTTP ${res.status}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+export interface Profile {
+  id: string;
+  display_name: string;
+  color: string;
+  created: string;
+}
+
+export interface ProjectMeta {
+  slug: string;
+  display_name: string;
+  created: string;
+  archived: boolean;
+}
+
+export interface SubprojectMeta extends ProjectMeta {}
+
+export const apiClient = {
+  health: () => api<{ ok: boolean; ollama: string; model_loaded: string | null }>("/api/health", { skipProfile: true }),
+
+  listProfiles: () => api<{ profiles: Profile[] }>("/api/profiles", { skipProfile: true }),
+  createProfile: (display_name: string) =>
+    api<Profile>("/api/profiles", { method: "POST", body: { display_name }, skipProfile: true }),
+
+  listProjects: () => api<{ projects: ProjectMeta[] }>("/api/projects"),
+  createProject: (display_name: string) =>
+    api<ProjectMeta>("/api/projects", { method: "POST", body: { display_name } }),
+  renameProject: (slug: string, display_name: string) =>
+    api<ProjectMeta>(`/api/projects/${slug}`, { method: "PATCH", body: { display_name } }),
+  archiveProject: (slug: string) =>
+    api<ProjectMeta>(`/api/projects/${slug}`, { method: "DELETE" }),
+
+  listSubprojects: (project: string) =>
+    api<{ subprojects: SubprojectMeta[] }>(`/api/projects/${project}/subprojects`),
+  createSubproject: (project: string, display_name: string) =>
+    api<SubprojectMeta>(`/api/projects/${project}/subprojects`, {
+      method: "POST",
+      body: { display_name },
+    }),
+};
