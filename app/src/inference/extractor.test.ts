@@ -160,6 +160,54 @@ describe("extractFromDump", () => {
   });
 });
 
+// Regression: backprop-1, BUG-2 — strict byte-exact substring validation drops
+// 95%+ of ideas from small models that normalize whitespace/quotes. Enable this
+// test when implementing the fuzzy-match fix for extractor validation.
+// See spec-synthesis.md R005.
+describe("extractFromDump (backprop-1, BUG-2 — fuzzy evidence_quote match)", () => {
+  const bodyWithRealSpacing =
+    "Step 3 onboarding asks for billing too early.\n  We're losing people\n  right at the credit-card field.";
+
+  test("accepts evidence_quote whose whitespace differs from the dump body", async () => {
+    // The model returns a normalized quote (collapsed whitespace) that is NOT
+    // a byte-exact substring of the body (which has newlines + double spaces).
+    // Before fix: the idea is dropped. After fix: normalized match accepts it.
+    const svc = new FakeService([
+      JSON.stringify({
+        ideas: [
+          {
+            statement: "Billing at step 3 is too early",
+            type: "concern",
+            evidence_quote: "Step 3 onboarding asks for billing too early. We're losing people right at the credit-card field.",
+            confidence: 0.8,
+          },
+        ],
+      }),
+    ]);
+    const out = await extractFromDump({ service: svc, dumpId: "d1", author: "alice", body: bodyWithRealSpacing });
+    expect(out).toHaveLength(1);
+    expect(svc.attempts).toBe(1);
+  });
+
+  test("accepts evidence_quote with curly quotes when body has straight quotes (or vice versa)", async () => {
+    const body = `We said "ship by Friday" but we don't have data.`;
+    const svc = new FakeService([
+      JSON.stringify({
+        ideas: [
+          {
+            statement: "Friday deadline is unsupported",
+            type: "concern",
+            evidence_quote: `We said \u201Cship by Friday\u201D but we don\u2019t have data.`,
+            confidence: 0.7,
+          },
+        ],
+      }),
+    ]);
+    const out = await extractFromDump({ service: svc, dumpId: "d1", author: "alice", body });
+    expect(out).toHaveLength(1);
+  });
+});
+
 describe("extractAll", () => {
   test("yields cached for unchanged dumps and extracted for new ones", async () => {
     const reg = await buildRegistry();

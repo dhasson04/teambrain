@@ -94,3 +94,39 @@ describe("validateCitations", () => {
     expect(result.repairInstruction).toMatch(/1\..*\n2\..*/);
   });
 });
+
+// Regression: backprop-2, BUG-3 — renderer emits profile-UUID as dump-id when
+// the timestamp suffix is stripped. Currently validator returns identical
+// "does not exist" complaint on every retry, so repair prompts cannot succeed.
+// Enable when implementing the prefix-normalization fix. See spec-synthesis.md R008.
+describe("validateCitations (backprop-2, BUG-3 — dump-id prefix tolerance)", () => {
+  test("normalizes and accepts citation that uses a unique profile-uuid prefix", async () => {
+    const d1 = await createDump("acme", "q2", "alice", "Step 3 onboarding asks for billing too early.");
+    // d1.id is like "alice-<timestamp>". Model emits just "alice" (the profile uuid prefix).
+    const profilePrefix = d1.id.split("-")[0]!;
+    const md = `## Agreed\n- Billing too early [Alice, ${profilePrefix}]\n`;
+    const result = await validateCitations({ markdown: md, project: "acme", sub: "q2" });
+    expect(result.ok).toBe(true);
+  });
+
+  test("emits ambiguous prefix complaint when profile has multiple dumps", async () => {
+    const d1 = await createDump("acme", "q2", "alice", "First dump.");
+    const d2 = await createDump("acme", "q2", "alice", "Second dump.");
+    const profilePrefix = d1.id.split("-")[0]!;
+    const md = `## Agreed\n- Something [Alice, ${profilePrefix}]\n`;
+    const result = await validateCitations({ markdown: md, project: "acme", sub: "q2" });
+    expect(result.ok).toBe(false);
+    expect(result.complaints[0]?.reason).toMatch(/ambiguous prefix/i);
+    expect(result.complaints[0]?.reason).toContain(d1.id);
+    expect(result.complaints[0]?.reason).toContain(d2.id);
+  });
+
+  test("accepts citation when author is the display_name 'Alice' and dump author is profile uuid", async () => {
+    // Post-fix the renderer emits [Alice, <dump-id>] (display_name) rather than
+    // [<uuid>, <dump-id>]. Validator must accept display_name → author resolution.
+    const d1 = await createDump("acme", "q2", "alice", "x");
+    const md = `## Agreed\n- Claim [Alice, ${d1.id}]\n`;
+    const result = await validateCitations({ markdown: md, project: "acme", sub: "q2" });
+    expect(result.ok).toBe(true);
+  });
+});

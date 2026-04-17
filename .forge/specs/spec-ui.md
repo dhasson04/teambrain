@@ -133,6 +133,8 @@ Visible in bottom bar when subproject is selected. Drives the synthesis pipeline
 - [ ] Disabled while running
 - [ ] Stop button appears beside it during running state; click cancels via DELETE
 - [ ] Status indicator visible from any tab while synthesis is running
+- [ ] Phase label transitions through extracting → merging → rendering → validating within 1 second of each corresponding SSE event emitted by the server; Vite's dev proxy for `/api` is configured with `proxyRes` handlers that set `X-Accel-Buffering: no` and disable response buffering, so SSE events are not batched (backprop-4, BUG-4)
+- [ ] A single user click of Re-synthesize produces exactly one backend pipeline run; on stream end (`done` or `error`) the client does not auto-reconnect or restart; `useSSE.start` is never called from inside an effect; regression-tested in `app/web/lib/use-sse.test.ts` (backprop-5, BUG-5)
 
 ### R011: Exploration tab type ("New Direction") at project level
 Sibling to subprojects. Opens an exploration-persona chat in its own tab. Persistent across
