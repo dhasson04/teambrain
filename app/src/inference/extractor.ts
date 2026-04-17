@@ -2,12 +2,36 @@ import { z } from "zod";
 import { listDumps } from "../vault/dumps";
 import { parseFrontmatter } from "../vault/fs-utils";
 import { IdeaTypeSchema, type IdeaType } from "../vault/ideas";
+import { loadConfig } from "../server/config";
 import {
   diffByHash,
   type DumpHashEntry,
   readLastSynthInput,
 } from "../vault/synthesis";
 import type { InferenceService } from "./inference-service";
+
+/**
+ * Normalize a string for fuzzy evidence_quote matching. Small local models
+ * (gemma3:4b) normalize whitespace and quotes when echoing text, so byte-exact
+ * substring checks drop 95%+ of ideas. We accept the match if the normalized
+ * quote is a substring of the normalized body.
+ */
+function normalizeForMatch(s: string): string {
+  return s
+    .replace(/[\u2018\u2019\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201F]/g, '"')
+    .replace(/\u2026/g, "...")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, "")
+    .toLowerCase();
+}
+
+function quoteMatchesBody(quote: string, body: string): boolean {
+  if (body.includes(quote)) return true;
+  const nq = normalizeForMatch(quote);
+  if (nq.length === 0) return false;
+  return normalizeForMatch(body).includes(nq);
+}
 
 export const ExtractedIdeaSchema = z.object({
   statement: z.string().trim().min(1),
@@ -69,7 +93,7 @@ export interface ExtractDumpInput {
  * re-prompts up to maxRetries times to fix bad quotes.
  */
 export async function extractFromDump(input: ExtractDumpInput): Promise<AttributedIdea[]> {
-  const maxRetries = input.maxRetries ?? 2;
+  const maxRetries = input.maxRetries ?? loadConfig().extract_max_retries ?? 2;
   let lastError = "";
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const userMsg = `${EXTRACTION_INSTRUCTIONS}\n\n<dump author="${input.author}" id="${input.dumpId}">\n${input.body}\n</dump>${
@@ -90,7 +114,7 @@ export async function extractFromDump(input: ExtractDumpInput): Promise<Attribut
     const valid: AttributedIdea[] = [];
     const invalid: ExtractedIdea[] = [];
     for (const idea of parsed.ideas) {
-      if (input.body.includes(idea.evidence_quote)) {
+      if (quoteMatchesBody(idea.evidence_quote, input.body)) {
         valid.push({ ...idea, dump_id: input.dumpId, author: input.author });
       } else {
         invalid.push(idea);
@@ -101,7 +125,7 @@ export async function extractFromDump(input: ExtractDumpInput): Promise<Attribut
       // Last attempt — return whatever was valid, drop the rest.
       return valid;
     }
-    lastError = `${invalid.length} ideas had non-verbatim evidence_quote (must be a substring of the dump). Try again with exact quotes.`;
+    lastError = `${invalid.length} ideas had an evidence_quote that did not appear in the dump (even after whitespace / quote normalization). Copy exact phrases from the dump body.`;
   }
   return [];
 }

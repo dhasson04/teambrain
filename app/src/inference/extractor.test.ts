@@ -164,7 +164,7 @@ describe("extractFromDump", () => {
 // 95%+ of ideas from small models that normalize whitespace/quotes. Enable this
 // test when implementing the fuzzy-match fix for extractor validation.
 // See spec-synthesis.md R005.
-describe.skip("extractFromDump (backprop-1, BUG-2 — fuzzy evidence_quote match)", () => {
+describe("extractFromDump (backprop-1, BUG-2 — fuzzy evidence_quote match)", () => {
   const bodyWithRealSpacing =
     "Step 3 onboarding asks for billing too early.\n  We're losing people\n  right at the credit-card field.";
 
