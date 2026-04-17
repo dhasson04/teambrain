@@ -51,6 +51,8 @@ if (import.meta.main) {
   );
   console.log(`ollama: ${cfg.ollama_url} model=${cfg.model_default}`);
   const app = createApp();
-  Bun.serve({ port, fetch: app.fetch });
+  // idleTimeout: 0 disables Bun's 10s default — the synthesis SSE stream can
+  // go 60-120s between writes during Ollama extract/merge/render on slow GPUs.
+  Bun.serve({ port, idleTimeout: 0, fetch: app.fetch });
   console.log(`teambrain server listening on http://127.0.0.1:${port}`);
 }
