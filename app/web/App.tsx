@@ -1,6 +1,7 @@
 import { AppShell } from "./components/AppShell";
 import { Sidebar } from "./components/Sidebar";
 import { SubprojectView } from "./components/SubprojectView";
+import { ConnectionsTab } from "./components/SubprojectView/ConnectionsTab";
 import { DumpTab } from "./components/SubprojectView/DumpTab";
 import { MainTab } from "./components/SubprojectView/MainTab";
 import { useBootstrap, useProjectsStore } from "./lib/stores";
@@ -42,9 +43,7 @@ export function App() {
           sub={activeSub}
           renderMain={() => <MainTab project={activeProject} sub={activeSub} />}
           renderDump={() => <DumpTab project={activeProject} sub={activeSub} />}
-          renderGraph={() => (
-            <PlaceholderPanel title="Connections tab" body="react-flow knowledge graph lands in T012." />
-          )}
+          renderGraph={() => <ConnectionsTab project={activeProject} sub={activeSub} />}
           renderSynthesis={() => (
             <PlaceholderPanel title="Synthesis tab" body="Agreed / Disputed / Move forward sections land in T013." />
           )}

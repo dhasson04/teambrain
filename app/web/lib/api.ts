@@ -101,6 +101,35 @@ export interface ProblemDoc {
   body: string;
 }
 
+export type IdeaType = "theme" | "claim" | "proposal" | "concern" | "question" | "deliverable";
+
+export interface Idea {
+  idea_id: string;
+  statement: string;
+  type: IdeaType;
+  cluster_id: string | null;
+  contributing_dumps: string[];
+  created: string;
+}
+
+export type ConnectionKind = "agree" | "contradict" | "related";
+
+export interface Connection {
+  edge_id: string;
+  from_idea: string;
+  to_idea: string;
+  kind: ConnectionKind;
+  weight: number;
+}
+
+export interface AttributionEntry {
+  dump_id: string;
+  author: string;
+  verbatim_quote: string;
+}
+
+export type AttributionMap = Record<string, AttributionEntry[]>;
+
 export const apiClient = {
   health: () => api<{ ok: boolean; ollama: string; model_loaded: string | null }>("/api/health", { skipProfile: true }),
 
@@ -154,4 +183,11 @@ export const apiClient = {
       method: "PATCH",
       body: { content },
     }),
+
+  getIdeas: (project: string, sub: string) =>
+    api<{ ideas: Idea[] }>(`/api/projects/${project}/subprojects/${sub}/ideas`),
+  getConnections: (project: string, sub: string) =>
+    api<{ connections: Connection[] }>(`/api/projects/${project}/subprojects/${sub}/connections`),
+  getAttribution: (project: string, sub: string) =>
+    api<AttributionMap>(`/api/projects/${project}/subprojects/${sub}/attribution`),
 };
