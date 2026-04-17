@@ -11,9 +11,12 @@
 .forge/checkpoints/
 .forge/history/
 
-# Runtime data — never commit dumps or synthesis output
-# (anchored to repo root so app/src/vault/ source code is still tracked)
+# Runtime data — never commit dumps, materials, or synthesis output
+# Matches the runtime vault wherever it lives (repo root or app/),
+# while leaving app/src/vault/ source code tracked because that path
+# isn't named just "vault"
 /vault/
+/app/vault/
 
 # Node
 node_modules/

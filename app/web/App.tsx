@@ -1,19 +1,13 @@
+import { useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { Sidebar } from "./components/Sidebar";
 import { SubprojectView } from "./components/SubprojectView";
 import { ConnectionsTab } from "./components/SubprojectView/ConnectionsTab";
 import { DumpTab } from "./components/SubprojectView/DumpTab";
 import { MainTab } from "./components/SubprojectView/MainTab";
-import { useBootstrap, useProjectsStore } from "./lib/stores";
-
-function PlaceholderPanel({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] p-6 text-center">
-      <p className="mb-2 text-sm font-semibold text-[var(--text-primary)]">{title}</p>
-      <p className="text-xs text-[var(--text-muted)]">{body}</p>
-    </div>
-  );
-}
+import { SynthesisTab } from "./components/SubprojectView/SynthesisTab";
+import { SynthControls } from "./components/SynthControls";
+import { useBootstrap, useProfilesStore, useProjectsStore } from "./lib/stores";
 
 function EmptyMain() {
   return (
@@ -31,22 +25,59 @@ function EmptyMain() {
   );
 }
 
+function BottomBar({ project, sub, onSynthesisDone }: { project?: string; sub?: string; onSynthesisDone: () => void }) {
+  const { activeId, profiles } = useProfilesStore();
+  const profile = profiles.find((p) => p.id === activeId);
+  return (
+    <div className="flex w-full items-center justify-between text-xs">
+      <div className="flex items-center gap-2 text-[var(--text-muted)]">
+        {profile ? (
+          <>
+            <span
+              className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+              style={{ background: profile.color }}
+            >
+              {profile.display_name[0]?.toUpperCase()}
+            </span>
+            <span className="text-[var(--text-secondary)]">{profile.display_name}</span>
+          </>
+        ) : (
+          <span>no profile</span>
+        )}
+      </div>
+      {project && sub ? (
+        <SynthControls project={project} sub={sub} onComplete={onSynthesisDone} />
+      ) : (
+        <span className="font-mono text-[10px] text-[var(--text-muted)]">teambrain · v0.1.0</span>
+      )}
+    </div>
+  );
+}
+
 export function App() {
   useBootstrap();
   const { activeProject, activeSub } = useProjectsStore();
+  const [synthVersion, setSynthVersion] = useState(0);
 
   return (
-    <AppShell sidebar={<Sidebar />}>
+    <AppShell
+      sidebar={<Sidebar />}
+      bottom={
+        <BottomBar
+          project={activeProject ?? undefined}
+          sub={activeSub ?? undefined}
+          onSynthesisDone={() => setSynthVersion((v) => v + 1)}
+        />
+      }
+    >
       {activeProject && activeSub ? (
         <SubprojectView
           project={activeProject}
           sub={activeSub}
           renderMain={() => <MainTab project={activeProject} sub={activeSub} />}
           renderDump={() => <DumpTab project={activeProject} sub={activeSub} />}
-          renderGraph={() => <ConnectionsTab project={activeProject} sub={activeSub} />}
-          renderSynthesis={() => (
-            <PlaceholderPanel title="Synthesis tab" body="Agreed / Disputed / Move forward sections land in T013." />
-          )}
+          renderGraph={() => <ConnectionsTab key={synthVersion} project={activeProject} sub={activeSub} />}
+          renderSynthesis={() => <SynthesisTab key={synthVersion} project={activeProject} sub={activeSub} />}
         />
       ) : (
         <EmptyMain />

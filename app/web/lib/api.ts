@@ -184,6 +184,10 @@ export const apiClient = {
       body: { content },
     }),
 
+  getSynthesis: (project: string, sub: string) =>
+    api<{ data: { created: string; dump_count: number; model: string } | null; body: string }>(
+      `/api/projects/${project}/subprojects/${sub}/synthesis`,
+    ),
   getIdeas: (project: string, sub: string) =>
     api<{ ideas: Idea[] }>(`/api/projects/${project}/subprojects/${sub}/ideas`),
   getConnections: (project: string, sub: string) =>
