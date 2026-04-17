@@ -126,12 +126,13 @@ progress. Concurrent calls for the same subproject are serialized.
 - [ ] Stop button on UI cancels via `DELETE /api/subprojects/:id/synthesize` (aborts current step)
 
 ### R010: Default model + config swap
-Model is configurable per persona. Default `gemma4:4b` works on the target laptop (RTX A1000
-6GB). Swap to `gemma3:12b` requires only frontmatter edit.
+Model is configurable per persona. Default `gemma3:4b` works on the target laptop (RTX A1000
+6GB) and is available in Ollama 0.20.x. Swap to `gemma3:12b` (better synthesis prose) or
+`gemma4:4b` (when Ollama publishes it) requires only frontmatter edit.
 
 **Acceptance Criteria:**
 - [ ] `prompts/synthesis.md` frontmatter `model:` overrides global default
-- [ ] Global default in `config.json` at repo root: `{ model_default: "gemma4:4b" }`
+- [ ] Global default in `config.json` at repo root: `{ model_default: "gemma3:4b" }`
 - [ ] Restarting backend after config change picks up new default
 - [ ] If specified model not pulled, R001 error fires with `ollama pull` instruction
 - [ ] README documents the swap with example: comment-out one model line, uncomment another
