@@ -8,6 +8,7 @@ import { materialsRoutes } from "./routes/materials";
 import { profilesRoutes } from "./routes/profiles";
 import { projectsRoutes } from "./routes/projects";
 import { subprojectsRoutes } from "./routes/subprojects";
+import { synthesisRoutes } from "./routes/synthesis";
 
 export function createApp(): Hono {
   const app = new Hono();
@@ -31,6 +32,7 @@ export function createApp(): Hono {
   app.route("/api", materialsRoutes());
   app.route("/api", dumpsRoutes());
   app.route("/api", ideasRoutes());
+  app.route("/api", synthesisRoutes());
 
   return app;
 }
