@@ -119,10 +119,31 @@ export async function listHistory(p: string, s: string): Promise<string[]> {
     .sort();
 }
 
+/**
+ * Pipeline version. Bump on any breaking change to what the extractor,
+ * merger, or renderer produce so stale caches from older pipelines don't
+ * leak forward.
+ *
+ * v1: initial stateless pipeline (pre-backprop + backprop-1..5)
+ * v2: grammar-constrained outputs + embedding clustering + NLI contradictions
+ *     + noun-phrase hints + contextual retrieval + extract/classify split
+ */
+export const PIPELINE_VERSION = 2;
+
+interface LastSynthInputFile {
+  version: number;
+  hashes: DumpHashEntry[];
+}
+
 export async function readLastSynthInput(p: string, s: string): Promise<DumpHashEntry[]> {
   const path = lastSynthInputPath(p, s);
   if (!existsSync(path)) return [];
-  return JSON.parse(await readFile(path, "utf8")) as DumpHashEntry[];
+  const raw = JSON.parse(await readFile(path, "utf8")) as DumpHashEntry[] | LastSynthInputFile;
+  // Legacy (v1) on-disk shape was a raw array — treat as stale and force
+  // full re-extraction on next synthesize.
+  if (Array.isArray(raw)) return [];
+  if (raw.version !== PIPELINE_VERSION) return [];
+  return raw.hashes;
 }
 
 export async function saveLastSynthInput(
@@ -131,7 +152,8 @@ export async function saveLastSynthInput(
   inputs: DumpHashEntry[],
 ): Promise<void> {
   await ensureDir(resolveVaultPath("projects", p, "subprojects", s, ".cache"));
-  await atomicWriteFile(lastSynthInputPath(p, s), `${JSON.stringify(inputs, null, 2)}\n`);
+  const file: LastSynthInputFile = { version: PIPELINE_VERSION, hashes: inputs };
+  await atomicWriteFile(lastSynthInputPath(p, s), `${JSON.stringify(file, null, 2)}\n`);
 }
 
 export interface SynthDiff {
