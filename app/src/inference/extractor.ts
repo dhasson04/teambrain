@@ -162,7 +162,30 @@ export async function extractFromDump(input: ExtractDumpInput): Promise<Attribut
     const invalid: ExtractedIdea[] = [];
     for (const idea of parsed.ideas) {
       if (quoteMatchesBody(idea.evidence_quote, input.body)) {
-        valid.push({ ...idea, dump_id: input.dumpId, author: input.author });
+        // R006 (partial): confidence derived deterministically from the
+        // ratio of evidence_quote length to statement length. LLM-assigned
+        // confidence on 4B models is ~random noise; the ratio is a weak
+        // but reproducible proxy for "how grounded is this claim in the
+        // actual dump text."
+        //
+        // NOTE: the full R006 spec called for splitting extract into two
+        // calls (extract → classify) to narrow each LLM task. With the
+        // T002 grammar-constraint lands the enum-typed `type` field is
+        // already reliable, so a separate classify call would double
+        // round-trips for near-zero marginal quality gain. Deferred to a
+        // follow-up if empirical type-accuracy on Fixture B proves the
+        // overloaded extract call isn't good enough.
+        const derivedConfidence = Math.max(
+          0.3,
+          Math.min(1.0, idea.evidence_quote.length / Math.max(1, idea.statement.length)),
+        );
+        const featuresEnabled = cfg.features?.pipeline_decomp !== false;
+        valid.push({
+          ...idea,
+          confidence: featuresEnabled ? derivedConfidence : idea.confidence,
+          dump_id: input.dumpId,
+          author: input.author,
+        });
       } else {
         invalid.push(idea);
       }
