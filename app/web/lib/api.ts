@@ -194,4 +194,9 @@ export const apiClient = {
     api<{ connections: Connection[] }>(`/api/projects/${project}/subprojects/${sub}/connections`),
   getAttribution: (project: string, sub: string) =>
     api<AttributionMap>(`/api/projects/${project}/subprojects/${sub}/attribution`),
+
+  getExplorationTab: (tab_id: string) =>
+    api<{
+      history: { tab_id: string; subproject_id: string | null; messages: { role: "user" | "assistant"; content: string }[] } | null;
+    }>(`/api/exploration/tabs/${tab_id}`),
 };

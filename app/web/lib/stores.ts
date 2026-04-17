@@ -68,13 +68,36 @@ export async function createProfile(displayName: string): Promise<void> {
   setActiveProfileId(profile.id);
 }
 
+export interface DirectionTab {
+  tab_id: string;
+  project: string;
+  name: string;
+  created: string;
+}
+
 interface ProjectsState {
   projects: ProjectMeta[];
   subprojectsByProject: Record<string, SubprojectMeta[]>;
   expanded: Record<string, boolean>;
   activeProject: string | null;
   activeSub: string | null;
+  activeDirection: string | null;
+  directionsByProject: Record<string, DirectionTab[]>;
   loading: boolean;
+}
+
+function loadDirections(): Record<string, DirectionTab[]> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem("teambrain.directions") ?? "{}") as Record<string, DirectionTab[]>;
+  } catch {
+    return {};
+  }
+}
+
+function saveDirections(map: Record<string, DirectionTab[]>): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("teambrain.directions", JSON.stringify(map));
 }
 
 export const projectsStore = createStore<ProjectsState>({
@@ -83,6 +106,8 @@ export const projectsStore = createStore<ProjectsState>({
   expanded: JSON.parse(typeof window !== "undefined" ? localStorage.getItem("teambrain.expanded") ?? "{}" : "{}"),
   activeProject: null,
   activeSub: null,
+  activeDirection: null,
+  directionsByProject: loadDirections(),
   loading: false,
 });
 
@@ -115,7 +140,40 @@ export function toggleExpanded(project: string): void {
 }
 
 export function selectSubproject(project: string, sub: string): void {
-  projectsStore.update((s) => ({ ...s, activeProject: project, activeSub: sub }));
+  projectsStore.update((s) => ({ ...s, activeProject: project, activeSub: sub, activeDirection: null }));
+}
+
+export function selectDirection(project: string, tabId: string): void {
+  projectsStore.update((s) => ({ ...s, activeProject: project, activeSub: null, activeDirection: tabId }));
+}
+
+export function createDirection(project: string, name: string): DirectionTab {
+  const tab: DirectionTab = {
+    tab_id: `dir-${Math.random().toString(36).slice(2, 10)}`,
+    project,
+    name,
+    created: new Date().toISOString(),
+  };
+  projectsStore.update((s) => {
+    const list = s.directionsByProject[project] ?? [];
+    const next = { ...s.directionsByProject, [project]: [...list, tab] };
+    saveDirections(next);
+    return { ...s, directionsByProject: next };
+  });
+  return tab;
+}
+
+export function closeDirection(project: string, tabId: string): void {
+  projectsStore.update((s) => {
+    const list = (s.directionsByProject[project] ?? []).filter((d) => d.tab_id !== tabId);
+    const next = { ...s.directionsByProject, [project]: list };
+    saveDirections(next);
+    return {
+      ...s,
+      directionsByProject: next,
+      activeDirection: s.activeDirection === tabId ? null : s.activeDirection,
+    };
+  });
 }
 
 export async function createProject(displayName: string): Promise<void> {

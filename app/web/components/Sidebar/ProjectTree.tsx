@@ -7,6 +7,7 @@ import {
   useProjectsStore,
 } from "../../lib/stores";
 import { cn } from "../../lib/utils";
+import { DirectionList } from "./DirectionList";
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -135,6 +136,7 @@ export function ProjectTree() {
                       void createSubproject(p.slug, name);
                     }}
                   />
+                  <DirectionList project={p.slug} />
                 </div>
               )}
             </div>

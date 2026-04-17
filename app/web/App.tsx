@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AppShell } from "./components/AppShell";
+import { ExplorationView } from "./components/Exploration/ExplorationView";
 import { Sidebar } from "./components/Sidebar";
 import { SubprojectView } from "./components/SubprojectView";
 import { ConnectionsTab } from "./components/SubprojectView/ConnectionsTab";
@@ -56,8 +57,12 @@ function BottomBar({ project, sub, onSynthesisDone }: { project?: string; sub?: 
 
 export function App() {
   useBootstrap();
-  const { activeProject, activeSub } = useProjectsStore();
+  const { activeProject, activeSub, activeDirection, directionsByProject } = useProjectsStore();
   const [synthVersion, setSynthVersion] = useState(0);
+
+  const directionTab = activeProject && activeDirection
+    ? (directionsByProject[activeProject] ?? []).find((d: { tab_id: string }) => d.tab_id === activeDirection)
+    : undefined;
 
   return (
     <AppShell
@@ -70,7 +75,9 @@ export function App() {
         />
       }
     >
-      {activeProject && activeSub ? (
+      {directionTab ? (
+        <ExplorationView tab={directionTab} />
+      ) : activeProject && activeSub ? (
         <SubprojectView
           project={activeProject}
           sub={activeSub}
