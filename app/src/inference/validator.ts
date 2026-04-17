@@ -1,5 +1,6 @@
 import { listDumps } from "../vault/dumps";
 import { parseFrontmatter } from "../vault/fs-utils";
+import { loadProfiles } from "../vault/profiles";
 
 export interface CitationRef {
   author: string;
@@ -78,16 +79,47 @@ export async function validateCitations(input: ValidateInput): Promise<Validatio
   const citations = parseCitations(input.markdown);
   const complaints: CitationComplaint[] = [];
 
+  // Resolve author display_name ↔ profile id so citations can be written in
+  // either form. After backprop-2 the renderer emits display_names; the
+  // validator must still accept legacy UUID-style authors too.
+  const profiles = await loadProfiles();
+  const displayByUuid = new Map(profiles.profiles.map((p) => [p.id, p.display_name]));
+
+  const dumpIds = [...index.keys()];
+
   for (const c of citations) {
-    const dump = index.get(c.dump_id);
+    let dump = index.get(c.dump_id);
+
+    // Prefix tolerance: small models routinely strip the timestamp suffix
+    // and emit just the profile-uuid prefix of the real dump-id. If the
+    // cited id is a unique prefix of exactly one real dump-id, normalize
+    // and accept. If it's a prefix of multiple, emit an actionable
+    // "ambiguous prefix" complaint with the candidates listed.
     if (!dump) {
-      complaints.push({ citation: c, reason: `dump-id "${c.dump_id}" does not exist in this subproject` });
-      continue;
+      const prefixMatches = dumpIds.filter((id) => id.startsWith(c.dump_id) && id !== c.dump_id);
+      if (prefixMatches.length === 1) {
+        dump = index.get(prefixMatches[0]!);
+      } else if (prefixMatches.length > 1) {
+        complaints.push({
+          citation: c,
+          reason: `ambiguous prefix "${c.dump_id}" matches multiple dump-ids: ${prefixMatches.join(", ")}. Use the full dump-id from the attribution field.`,
+        });
+        continue;
+      } else {
+        complaints.push({ citation: c, reason: `dump-id "${c.dump_id}" does not exist in this subproject` });
+        continue;
+      }
     }
-    if (dump.author.toLowerCase() !== c.author.toLowerCase()) {
+
+    const authorDisplay = displayByUuid.get(dump.author) ?? dump.author;
+    const citedAuthor = c.author.toLowerCase();
+    if (
+      dump.author.toLowerCase() !== citedAuthor &&
+      authorDisplay.toLowerCase() !== citedAuthor
+    ) {
       complaints.push({
         citation: c,
-        reason: `author mismatch: citation says "${c.author}" but dump ${c.dump_id} was authored by "${dump.author}"`,
+        reason: `author mismatch: citation says "${c.author}" but dump ${dump.id} was authored by "${authorDisplay}"`,
       });
     }
   }

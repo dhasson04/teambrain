@@ -99,7 +99,7 @@ describe("validateCitations", () => {
 // the timestamp suffix is stripped. Currently validator returns identical
 // "does not exist" complaint on every retry, so repair prompts cannot succeed.
 // Enable when implementing the prefix-normalization fix. See spec-synthesis.md R008.
-describe.skip("validateCitations (backprop-2, BUG-3 — dump-id prefix tolerance)", () => {
+describe("validateCitations (backprop-2, BUG-3 — dump-id prefix tolerance)", () => {
   test("normalizes and accepts citation that uses a unique profile-uuid prefix", async () => {
     const d1 = await createDump("acme", "q2", "alice", "Step 3 onboarding asks for billing too early.");
     // d1.id is like "alice-<timestamp>". Model emits just "alice" (the profile uuid prefix).
