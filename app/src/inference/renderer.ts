@@ -1,9 +1,11 @@
+import { loadConfig } from "../server/config";
 import type { AttributionFile } from "../vault/ideas";
 import { readIdeasBundle } from "../vault/ideas";
 import { loadProfiles } from "../vault/profiles";
 import { writeSynthesis } from "../vault/synthesis";
 import type { DumpHashEntry } from "../vault/synthesis";
 import type { InferenceService } from "./inference-service";
+import { formatProjectContextBlock, retrieveForRender } from "./retrieval";
 import { validateCitations } from "./validator";
 
 // R001: the renderer now returns STRUCTURED JSON that this module assembles
@@ -188,14 +190,31 @@ export async function renderSynthesis(input: RenderInput): Promise<RenderResult>
     2,
   );
 
+  // R005: contextual retrieval over materials + problem.md. Feeds a
+  // <project-context> block into the render prompt so materials
+  // actually influence output. Closes the "Big Lie" from the 2026-04-17
+  // deep-dive deck slide 11. Feature-flagged; empty block when disabled.
+  let projectContext = "";
+  if (loadConfig().features?.retrieval_at_render !== false) {
+    try {
+      const ideaStatements = bundle.ideas.ideas.map((i) => i.statement);
+      const chunks = await retrieveForRender(input.project, input.sub, ideaStatements, 3);
+      projectContext = formatProjectContextBlock(chunks);
+    } catch {
+      // Never let retrieval failures block rendering.
+      projectContext = "";
+    }
+  }
+
   let lastBody = "";
   let lastComplaints: string[] = [];
   let priorComplaints: string[] | null = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const contextBlock = projectContext ? `\n\n${projectContext}` : "";
     const userMsg =
       attempt === 0
-        ? `${RENDER_INSTRUCTIONS}\n\n<context>\n${compact}\n</context>`
-        : `${RENDER_INSTRUCTIONS}\n\n<context>\n${compact}\n</context>\n\n<previous-output>\n${lastBody}\n</previous-output>\n\n<repair>\nThe previous output had these citation problems:\n${lastComplaints.join("\n- ")}\nRe-emit with those fixes.\n</repair>`;
+        ? `${RENDER_INSTRUCTIONS}\n\n<context>\n${compact}\n</context>${contextBlock}`
+        : `${RENDER_INSTRUCTIONS}\n\n<context>\n${compact}\n</context>${contextBlock}\n\n<previous-output>\n${lastBody}\n</previous-output>\n\n<repair>\nThe previous output had these citation problems:\n${lastComplaints.join("\n- ")}\nRe-emit with those fixes.\n</repair>`;
     const raw = await input.service.runToString({
       persona_id: "synthesis",
       // R001: sampler-enforced structured JSON. Section headers are
