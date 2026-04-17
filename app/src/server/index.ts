@@ -3,6 +3,7 @@ import { assertOllamaReady, checkOllama } from "../inference/ollama-health";
 import { initVault } from "../vault/init";
 import { loadConfig } from "./config";
 import { dumpsRoutes } from "./routes/dumps";
+import { explorationRoutes } from "./routes/exploration";
 import { ideasRoutes } from "./routes/ideas";
 import { materialsRoutes } from "./routes/materials";
 import { profilesRoutes } from "./routes/profiles";
@@ -33,6 +34,7 @@ export function createApp(): Hono {
   app.route("/api", dumpsRoutes());
   app.route("/api", ideasRoutes());
   app.route("/api", synthesisRoutes());
+  app.route("/api", explorationRoutes());
 
   return app;
 }
