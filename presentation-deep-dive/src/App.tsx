@@ -2,10 +2,45 @@ import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence } from "motion/react";
 import { StepIndicator } from "./components/StepIndicator";
 import { Title } from "./components/slides/Title";
+import { Inputs } from "./components/slides/Inputs";
+import { DumpAnatomy } from "./components/slides/DumpAnatomy";
+import { MaterialsAndProblemClaim } from "./components/slides/MaterialsAndProblemClaim";
+import { ExtractStage } from "./components/slides/ExtractStage";
+import { MergeStage } from "./components/slides/MergeStage";
+import { RenderStage } from "./components/slides/RenderStage";
+import { ValidatorStage } from "./components/slides/ValidatorStage";
+import { Clustering } from "./components/slides/Clustering";
+import { GraphRender } from "./components/slides/GraphRender";
+import { MaterialsDontFeed } from "./components/slides/MaterialsDontFeed";
+import { FailureModes } from "./components/slides/FailureModes";
+import { ModelCapacity } from "./components/slides/ModelCapacity";
+import { HardwareBudget } from "./components/slides/HardwareBudget";
+import { BackpropFixes } from "./components/slides/BackpropFixes";
+import { WhatsNext } from "./components/slides/WhatsNext";
 
 const SLIDES = [
   Title,
-  // Acts 1-6 slotted in by T008 once T002..T007 land.
+  // Act 1 — what goes in
+  Inputs,
+  DumpAnatomy,
+  MaterialsAndProblemClaim,
+  // Act 2 — how it's transformed
+  ExtractStage,
+  MergeStage,
+  RenderStage,
+  ValidatorStage,
+  // Act 3 — how it connects
+  Clustering,
+  GraphRender,
+  // Act 4 — the big lie (load-bearing)
+  MaterialsDontFeed,
+  // Act 5 — why the output is poor
+  FailureModes,
+  ModelCapacity,
+  HardwareBudget,
+  // Act 6 — what we fixed, what's still broken
+  BackpropFixes,
+  WhatsNext,
 ];
 
 export function App() {

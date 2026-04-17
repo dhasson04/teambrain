@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# tsc -b leaves .js/.d.ts outputs next to .tsx sources — ignore them.
+src/**/*.js
+src/**/*.d.ts
