@@ -1,20 +1,18 @@
 import { AppShell } from "./components/AppShell";
-import { useBootstrap, useProfilesStore } from "./lib/stores";
+import { Sidebar } from "./components/Sidebar";
+import { SubprojectView } from "./components/SubprojectView";
+import { useBootstrap, useProjectsStore } from "./lib/stores";
 
-function PlaceholderSidebar() {
+function PlaceholderPanel({ title, body }: { title: string; body: string }) {
   return (
-    <div className="p-4">
-      <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
-        Projects
-      </p>
-      <p className="text-sm text-[var(--text-secondary)]">
-        Sidebar tree lands in T007. Profile picker in T008.
-      </p>
+    <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] p-6 text-center">
+      <p className="mb-2 text-sm font-semibold text-[var(--text-primary)]">{title}</p>
+      <p className="text-xs text-[var(--text-muted)]">{body}</p>
     </div>
   );
 }
 
-function PlaceholderMain() {
+function EmptyMain() {
   return (
     <div className="flex flex-1 items-center justify-center">
       <div className="max-w-md text-center">
@@ -22,43 +20,40 @@ function PlaceholderMain() {
           Pick a subproject
         </h2>
         <p className="text-sm text-[var(--text-secondary)]">
-          Subproject 4-tab layout (Main / My Dump / Connections / Synthesis) lands in T009-T013.
+          Use the sidebar to expand a project and choose a subproject. The 4-tab view will load
+          here.
         </p>
       </div>
     </div>
   );
 }
 
-function BottomBar() {
-  const { activeId, profiles } = useProfilesStore();
-  const profile = profiles.find((p) => p.id === activeId);
-  return (
-    <div className="flex w-full items-center justify-between text-xs">
-      <div className="flex items-center gap-2 text-[var(--text-muted)]">
-        {profile ? (
-          <>
-            <span
-              className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-              style={{ background: profile.color }}
-            >
-              {profile.display_name[0]?.toUpperCase()}
-            </span>
-            <span className="text-[var(--text-secondary)]">{profile.display_name}</span>
-          </>
-        ) : (
-          <span>no profile</span>
-        )}
-      </div>
-      <span className="font-mono text-[10px] text-[var(--text-muted)]">teambrain · v0.1.0</span>
-    </div>
-  );
-}
-
 export function App() {
   useBootstrap();
+  const { activeProject, activeSub } = useProjectsStore();
+
   return (
-    <AppShell sidebar={<PlaceholderSidebar />} bottom={<BottomBar />}>
-      <PlaceholderMain />
+    <AppShell sidebar={<Sidebar />}>
+      {activeProject && activeSub ? (
+        <SubprojectView
+          project={activeProject}
+          sub={activeSub}
+          renderMain={() => (
+            <PlaceholderPanel title="Main tab" body="Problem statement + materials + activity feed land in T010." />
+          )}
+          renderDump={() => (
+            <PlaceholderPanel title="My Dump tab" body="CodeMirror composer + your past dumps land in T011." />
+          )}
+          renderGraph={() => (
+            <PlaceholderPanel title="Connections tab" body="react-flow knowledge graph lands in T012." />
+          )}
+          renderSynthesis={() => (
+            <PlaceholderPanel title="Synthesis tab" body="Agreed / Disputed / Move forward sections land in T013." />
+          )}
+        />
+      ) : (
+        <EmptyMain />
+      )}
     </AppShell>
   );
 }
