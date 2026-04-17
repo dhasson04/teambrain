@@ -188,6 +188,81 @@ describe("InferenceService", () => {
     expect(JSON.parse(captured).format).toBe("json");
   });
 
+  // R001: structured `format` passes straight through to Ollama.
+  test("passes a JSON-schema format object through to the POST body", async () => {
+    let captured = "";
+    const schema = {
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+      additionalProperties: false,
+    };
+    const capturingFetch: FetchLike = async (_url, init) => {
+      captured = String((init as RequestInit).body);
+      return new Response(`${JSON.stringify({ message: { content: '{"name":"x"}' } })}\n${JSON.stringify({ done: true })}\n`, {
+        status: 200,
+      });
+    };
+    const svc = new InferenceService({
+      registry,
+      ollama_url: "http://x",
+      fetcher: capturingFetch,
+    });
+    for await (const _event of svc.run({
+      persona_id: "synthesis",
+      messages: [{ role: "user", content: "x" }],
+      format: schema,
+    })) {
+      // drain
+    }
+    const body = JSON.parse(captured);
+    expect(body.format).toEqual(schema);
+  });
+
+  test("format object takes precedence over json:true", async () => {
+    let captured = "";
+    const schema = { type: "object", properties: {}, additionalProperties: false };
+    const capturingFetch: FetchLike = async (_url, init) => {
+      captured = String((init as RequestInit).body);
+      return new Response(`${JSON.stringify({ done: true })}\n`, { status: 200 });
+    };
+    const svc = new InferenceService({
+      registry,
+      ollama_url: "http://x",
+      fetcher: capturingFetch,
+    });
+    for await (const _event of svc.run({
+      persona_id: "synthesis",
+      messages: [{ role: "user", content: "x" }],
+      json: true,
+      format: schema,
+    })) {
+      // drain
+    }
+    expect(JSON.parse(captured).format).toEqual(schema);
+  });
+
+  test("token-repetition-collapse guard emits error after threshold", async () => {
+    // Stream 25 identical short tokens — should trip the ≥20 threshold.
+    const repeat = Array.from({ length: 25 }, () => ({ message: { content: "!" } }));
+    const svc = new InferenceService({
+      registry,
+      ollama_url: "http://x",
+      fetcher: streamingFetch([...repeat, { done: true }]),
+    });
+    const events: Array<{ type: string; code?: string }> = [];
+    for await (const e of svc.run({
+      persona_id: "synthesis",
+      messages: [{ role: "user", content: "x" }],
+    })) {
+      events.push(e);
+      if (e.type === "error") break;
+    }
+    const err = events.find((e) => e.type === "error");
+    expect(err).toBeDefined();
+    expect(err?.code).toBe("repetition_collapse");
+  });
+
   test("runToString collects tokens and rejects on error", async () => {
     const okSvc = new InferenceService({
       registry,

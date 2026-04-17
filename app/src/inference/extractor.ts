@@ -79,6 +79,34 @@ Type definitions:
 Drop any idea you cannot ground in a verbatim quote.
 `;
 
+// R001: JSON Schema passed to Ollama's `format` field. The `type` field
+// is enum-constrained to the six IdeaTypeSchema values so the model
+// cannot emit anything else at the sampler level.
+const EXTRACTION_FORMAT = {
+  type: "object",
+  properties: {
+    ideas: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          statement: { type: "string", minLength: 1 },
+          type: {
+            type: "string",
+            enum: ["theme", "claim", "proposal", "concern", "question", "deliverable"],
+          },
+          evidence_quote: { type: "string", minLength: 1 },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+        },
+        required: ["statement", "type", "evidence_quote", "confidence"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["ideas"],
+  additionalProperties: false,
+} as const;
+
 export interface ExtractDumpInput {
   service: InferenceService;
   dumpId: string;
@@ -101,13 +129,18 @@ export async function extractFromDump(input: ExtractDumpInput): Promise<Attribut
     }`;
     const raw = await input.service.runToString({
       persona_id: "synthesis",
-      json: true,
+      // R001: structured `format` supersedes the legacy `json: true` flag.
+      // Shape errors become impossible at the sampler; remaining retries
+      // handle only the semantic `evidence_quote` substring check.
+      format: EXTRACTION_FORMAT,
       messages: [{ role: "user", content: userMsg }],
     });
     let parsed: { ideas: ExtractedIdea[] };
     try {
       parsed = ExtractionResponseSchema.parse(JSON.parse(raw));
     } catch (e) {
+      // Should be near-impossible now that sampler enforces the schema.
+      // Kept as a belt-and-suspenders guard; log for visibility.
       lastError = `JSON parse / schema validation failed: ${(e as Error).message}. Output strict JSON.`;
       continue;
     }

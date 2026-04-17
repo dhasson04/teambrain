@@ -72,8 +72,18 @@ describe("runPipeline", () => {
         contradictions: [],
         edges: [],
       }),
-      // render
-      `## Agreed\n- Billing too early [alice, ${dumpId}]\n\n## Disputed\n\n## Move forward\n`,
+      // render — T002/R001: renderer now emits structured JSON; the
+      // module assembles markdown server-side.
+      JSON.stringify({
+        agreed: [
+          {
+            text: "Billing too early",
+            citations: [{ author: "alice", dump_id: dumpId }],
+          },
+        ],
+        disputed: [],
+        move_forward: [],
+      }),
     ]);
 
     const events: string[] = [];

@@ -19,6 +19,18 @@ export interface RunInput {
   override?: InferenceOptions;
   /** Force JSON output mode (Ollama format: "json"). Used by extractor / merger. */
   json?: boolean;
+  /**
+   * Structured output constraint passed straight through to Ollama's
+   * /api/chat `format` field. Accepts a JSON Schema object (converted to
+   * GBNF by Ollama/llama.cpp) or the literal string "json" for legacy
+   * JSON-only mode. When `format` is set, `json` is ignored.
+   *
+   * Reference: https://docs.ollama.com/capabilities/structured-outputs
+   * Known bug on Gemma 4 under grammar constraints: ollama/ollama#15502 —
+   * token-repetition collapse on free-text string fields. Guarded by the
+   * repetition detector below.
+   */
+  format?: object | string;
 }
 
 export type InferenceEvent =
@@ -95,6 +107,10 @@ export class InferenceService {
 
     const messages = injectPrompt(prompt, input.messages);
     const url = `${this.opts.ollama_url.replace(/\/+$/, "")}/api/chat`;
+    // R001: `format` (JSON Schema or "json") takes precedence over the
+    // legacy `json` boolean. A structured schema is strictly stricter than
+    // plain JSON mode — it forbids shape errors entirely at the sampler.
+    const formatField = input.format !== undefined ? input.format : input.json ? "json" : undefined;
     const body = {
       model: prompt.frontmatter.model,
       messages,
@@ -105,7 +121,7 @@ export class InferenceService {
         ...(merged.max_tokens !== undefined ? { num_predict: merged.max_tokens } : {}),
       },
       stream: true,
-      ...(input.json ? { format: "json" } : {}),
+      ...(formatField !== undefined ? { format: formatField } : {}),
     };
 
     const start = Date.now();
@@ -131,6 +147,11 @@ export class InferenceService {
     let buffer = "";
     let promptTokens = 0;
     let completionTokens = 0;
+    // R001 safety belt: detect Gemma 4's grammar-constraint repetition-
+    // collapse (ollama/ollama#15502). If we see the same short token stream
+    // repeating 20+ times in a row, abort and surface a specific error.
+    let lastToken = "";
+    let repeatCount = 0;
 
     try {
       while (true) {
@@ -148,7 +169,27 @@ export class InferenceService {
             continue;
           }
           if (chunk.message?.content) {
-            yield { type: "token", content: chunk.message.content };
+            const content = chunk.message.content;
+            // Only trigger on short, non-whitespace tokens — natural prose
+            // can repeat words within reason.
+            if (content === lastToken && content.trim().length > 0 && content.length <= 8) {
+              repeatCount++;
+              if (repeatCount >= 20) {
+                yield {
+                  type: "error",
+                  code: "repetition_collapse",
+                  message:
+                    "Model entered token-repetition loop under grammar constraints. " +
+                    "See ollama/ollama#15502 — known issue on Gemma 4; Gemma 3 typically " +
+                    "unaffected. Aborting call.",
+                };
+                return;
+              }
+            } else {
+              repeatCount = 0;
+              lastToken = content;
+            }
+            yield { type: "token", content };
           }
           if (chunk.prompt_eval_count !== undefined) promptTokens = chunk.prompt_eval_count;
           if (chunk.eval_count !== undefined) completionTokens = chunk.eval_count;

@@ -66,6 +66,55 @@ Rules:
 Refer to ideas only by the idea_id values supplied. Do not invent new ids.
 `;
 
+// R001: JSON Schema mirroring MergeResponseSchema. Passed as Ollama's
+// `format` field so the sampler cannot emit shape violations.
+const MERGE_FORMAT = {
+  type: "object",
+  properties: {
+    clusters: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          cluster_id: { type: "string", minLength: 1 },
+          member_idea_ids: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 },
+        },
+        required: ["cluster_id", "member_idea_ids"],
+        additionalProperties: false,
+      },
+    },
+    contradictions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          left_idea_id: { type: "string", minLength: 1 },
+          right_idea_id: { type: "string", minLength: 1 },
+          reason: { type: "string", minLength: 1 },
+        },
+        required: ["left_idea_id", "right_idea_id", "reason"],
+        additionalProperties: false,
+      },
+    },
+    edges: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          from: { type: "string", minLength: 1 },
+          to: { type: "string", minLength: 1 },
+          kind: { type: "string", enum: ["agree", "contradict", "related"] },
+          weight: { type: "number", minimum: 0, maximum: 1 },
+        },
+        required: ["from", "to", "kind", "weight"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["clusters", "contradictions", "edges"],
+  additionalProperties: false,
+} as const;
+
 export interface AssignedIdea extends AttributedIdea {
   idea_id: string;
 }
@@ -106,7 +155,7 @@ export async function mergeIdeas(input: MergeInput): Promise<MergeOutput> {
   const userMsg = `${MERGE_INSTRUCTIONS}\n\n<ideas>\n${compactIdeasForPrompt(assigned)}\n</ideas>`;
   const raw = await input.service.runToString({
     persona_id: "synthesis",
-    json: true,
+    format: MERGE_FORMAT,
     messages: [{ role: "user", content: userMsg }],
   });
   const parsed = MergeResponseSchema.parse(JSON.parse(raw));

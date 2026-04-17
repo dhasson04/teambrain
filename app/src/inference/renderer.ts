@@ -6,30 +6,141 @@ import type { DumpHashEntry } from "../vault/synthesis";
 import type { InferenceService } from "./inference-service";
 import { validateCitations } from "./validator";
 
+// R001: the renderer now returns STRUCTURED JSON that this module assembles
+// into canonical markdown with fixed section headers. The LLM cannot
+// emit "## Concerns" or invent section names because it never emits
+// section headers at all — they're assembled deterministically here.
 const RENDER_INSTRUCTIONS = `
 You will receive a JSON snapshot of a project's clustered ideas,
-contradiction edges, and attribution. Render a markdown document with
-exactly three sections:
+contradiction edges, and attribution. Produce structured JSON describing
+three categories of bullets:
 
-## Agreed
-- one bullet per cluster of size >= 2 (multiple authors converged)
-- end each bullet with one or more [Author, dump-id] citations from the cluster's attribution
+- agreed: bullets where multiple authors converged on the same idea
+  (one entry per cluster of size >= 2)
+- disputed: bullets for contradiction edges, with both sides quoted
+- move_forward: bullets for "deliverable"-typed ideas that have cluster
+  support and no attached contradiction
 
-## Disputed
-- one bullet per contradiction edge
-- quote BOTH sides in their author's voice with [Author, dump-id] citations
+Each bullet cites one or more [author, dump_id] pairs. Author is the human
+display name (e.g. "Alice") exactly as it appears in attribution; dump_id
+is the FULL string including timestamp suffix.
 
-## Move forward
-- one bullet per "deliverable"-typed idea that has cluster support and no attached contradiction
-- end with [Author, dump-id] citation
-
-Hard rules:
-- Every bullet must end with at least one [Author, dump-id] citation in that exact format
-- Author is the human display name (e.g. "Alice"), exactly as it appears in the attribution's "author" field — never a UUID.
-- dump-id is the FULL string in the attribution's "dump_id" field including any timestamp suffix — copy it verbatim, do not truncate.
-- Use the verbatim_quote from attribution where you reference the dump
-- Output the markdown directly. No preamble, no JSON, no code fences around the document.
+Use verbatim_quote fragments from attribution when referencing a dump.
+Return strict JSON per the provided schema. No preamble, no prose outside
+the JSON.
 `;
+
+const RENDER_FORMAT = {
+  type: "object",
+  properties: {
+    agreed: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string", minLength: 1 },
+          citations: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              properties: {
+                author: { type: "string", minLength: 1 },
+                dump_id: { type: "string", minLength: 1 },
+              },
+              required: ["author", "dump_id"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["text", "citations"],
+        additionalProperties: false,
+      },
+    },
+    disputed: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string", minLength: 1 },
+          citations: {
+            type: "array",
+            minItems: 2,
+            items: {
+              type: "object",
+              properties: {
+                author: { type: "string", minLength: 1 },
+                dump_id: { type: "string", minLength: 1 },
+              },
+              required: ["author", "dump_id"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["text", "citations"],
+        additionalProperties: false,
+      },
+    },
+    move_forward: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string", minLength: 1 },
+          citations: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              properties: {
+                author: { type: "string", minLength: 1 },
+                dump_id: { type: "string", minLength: 1 },
+              },
+              required: ["author", "dump_id"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["text", "citations"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["agreed", "disputed", "move_forward"],
+  additionalProperties: false,
+} as const;
+
+interface RenderBullet {
+  text: string;
+  citations: Array<{ author: string; dump_id: string }>;
+}
+interface RenderJson {
+  agreed: RenderBullet[];
+  disputed: RenderBullet[];
+  move_forward: RenderBullet[];
+}
+
+/**
+ * Assemble the canonical markdown from structured render JSON.
+ * The three section headers — "## Agreed", "## Disputed", "## Move forward" —
+ * are hardcoded here. The LLM never sees or produces them, so drift to
+ * "## Concerns" or missing sections is structurally impossible.
+ */
+function assembleMarkdown(j: RenderJson): string {
+  const formatBullet = (b: RenderBullet): string => {
+    const cites = b.citations.map((c) => `[${c.author}, ${c.dump_id}]`).join(" ");
+    return `- ${b.text} ${cites}`;
+  };
+  const section = (heading: string, bullets: RenderBullet[]): string => {
+    const body = bullets.length > 0 ? bullets.map(formatBullet).join("\n") : "_(none)_";
+    return `## ${heading}\n${body}`;
+  };
+  return [
+    section("Agreed", j.agreed),
+    section("Disputed", j.disputed),
+    section("Move forward", j.move_forward),
+  ].join("\n\n");
+}
 
 async function attributionWithDisplayNames(raw: AttributionFile): Promise<AttributionFile> {
   const profiles = await loadProfiles();
@@ -84,11 +195,24 @@ export async function renderSynthesis(input: RenderInput): Promise<RenderResult>
     const userMsg =
       attempt === 0
         ? `${RENDER_INSTRUCTIONS}\n\n<context>\n${compact}\n</context>`
-        : `${RENDER_INSTRUCTIONS}\n\n<context>\n${compact}\n</context>\n\n<previous-output>\n${lastBody}\n</previous-output>\n\n<repair>\nThe previous output had these citation problems:\n${lastComplaints.join("\n- ")}\nFix them and re-emit the full document.\n</repair>`;
-    const body = await input.service.runToString({
+        : `${RENDER_INSTRUCTIONS}\n\n<context>\n${compact}\n</context>\n\n<previous-output>\n${lastBody}\n</previous-output>\n\n<repair>\nThe previous output had these citation problems:\n${lastComplaints.join("\n- ")}\nRe-emit with those fixes.\n</repair>`;
+    const raw = await input.service.runToString({
       persona_id: "synthesis",
+      // R001: sampler-enforced structured JSON. Section headers are
+      // assembled deterministically in assembleMarkdown below.
+      format: RENDER_FORMAT,
       messages: [{ role: "user", content: userMsg }],
     });
+    let json: RenderJson;
+    try {
+      json = JSON.parse(raw) as RenderJson;
+    } catch (e) {
+      lastComplaints = [`render JSON parse failed: ${(e as Error).message}`];
+      if (priorComplaints && sameComplaints(priorComplaints, lastComplaints)) break;
+      priorComplaints = lastComplaints;
+      continue;
+    }
+    const body = assembleMarkdown(json);
     const validation = await validateCitations({
       markdown: body,
       project: input.project,
