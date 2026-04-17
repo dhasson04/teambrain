@@ -76,7 +76,9 @@ verbatim source quotes.
 - [ ] `POST /api/subprojects/:id/extract-ideas` runs extraction for all dumps whose hash differs from `last-synth-input.json`
 - [ ] Calls Ollama with `format: "json"` to enforce JSON output
 - [ ] Output schema validated: `[{ statement, type, evidence_quote, confidence }]` where `evidence_quote` is verbatim substring of dump
-- [ ] Validator rejects extracted ideas whose `evidence_quote` is not a substring of source dump; re-prompts up to 2 times
+- [ ] Validator accepts extracted ideas whose `evidence_quote` matches the dump body after normalization (collapse whitespace runs, normalize curly quotes `" " ' '` to straight, unify ellipsis, trim leading/trailing punctuation); strict byte-exact substring is insufficient for small local models
+- [ ] Re-prompts up to `extract_max_retries` times; default 2, overridable in `config.json` so small models (gemma3:4b) can be given 4 retries without code changes (backprop-1, BUG-2)
+- [ ] On a dump ≥ 300 words containing ≥ 3 distinct claim-bearing sentences, the extractor produces ≥ 3 ideas when the fake InferenceService returns quotes that differ from the body only in whitespace/punctuation normalization; regression-tested in `app/src/inference/extractor.test.ts` (backprop-1, BUG-2)
 - [ ] Cache hit logged for skipped dumps; only changed dumps consume tokens
 - [ ] Returns SSE stream with progress: `extracting: { dump_id, status }` events
 
@@ -99,6 +101,8 @@ forward. Citations in inline format `[Author, dump-id]`.
 - [ ] Reads `ideas.json` + `attribution.json` + `connections.json`
 - [ ] Calls synthesis persona with structured input describing clusters + contradictions + deliverables
 - [ ] Output format: three `## Section` headers, each item is a markdown bullet ending with one or more `[Author, dump-id]` citations
+- [ ] In the renderer context JSON, `author` resolves to the profile's `display_name` (e.g. "Alice") rather than the UUID; raw profile UUIDs are not shown to the LLM, eliminating the UUID-vs-UUID slot confusion that caused BUG-3 (backprop-2, BUG-3)
+- [ ] `dump-id` in emitted citations is the full dump id including timestamp suffix (form: `<profile-uuid>-<iso-timestamp>`); a citation that emits only the profile-uuid prefix of a real dump-id is an error path the validator must handle (see R008)
 - [ ] "Agreed" lists clusters of size >= 2 (multi-author ideas)
 - [ ] "Disputed" lists contradiction pairs with both sides quoted in the dissenter's voice
 - [ ] "Move forward" lists `type: deliverable` ideas with consensus (no attached contradiction)
@@ -112,7 +116,10 @@ citation references a real dump-id whose author + quoted snippet match.
 - [ ] Each marker validated: dump exists in vault, author matches dump's frontmatter, quoted snippet (if any) appears verbatim in dump
 - [ ] On any failure, re-prompt with the validator's complaint included as user message
 - [ ] Max 2 retries; third failure surfaces error to UI with raw output preserved for debugging
+- [ ] If an emitted `dump-id` is a proper prefix of exactly one real dump-id in the subproject (the common LLM error of stripping the timestamp suffix), the validator normalizes to the full id and accepts; if the prefix matches multiple dump-ids the complaint is `ambiguous prefix` and lists candidates so the retry prompt carries actionable repair info (backprop-2, BUG-3)
+- [ ] Consecutive identical complaints across retries trigger an early exit with the preserved output (avoids wasting tokens on deterministic failure loops)
 - [ ] Test: hand-crafted synthesis with fake citation -> validator catches and rejects
+- [ ] Test: hand-crafted citation using profile-uuid-only prefix of a real dump-id -> validator normalizes and accepts (regression: backprop-2, BUG-3)
 
 ### R009: Manual re-synthesize trigger with progress
 UI button POSTs to start the full pipeline (extract -> merge -> render). SSE stream reports
@@ -124,6 +131,7 @@ progress. Concurrent calls for the same subproject are serialized.
 - [ ] Second call for same subproject while first in flight returns 202 with `{ queued: true, position: N }`
 - [ ] Different subprojects can synthesize in parallel
 - [ ] Stop button on UI cancels via `DELETE /api/subprojects/:id/synthesize` (aborts current step)
+- [ ] `Bun.serve` is configured with `idleTimeout: 0` so the synthesis SSE connection survives gaps of up to several minutes between writes (per-dump Ollama calls on gemma3:4b can take 30-120s with no bytes on the wire); regression-tested by a source-file assertion in `app/src/server/index.test.ts` (backprop-3, BUG-1 — fixed in commit `dee4af3`, spec added to prevent regression)
 
 ### R010: Default model + config swap
 Model is configurable per persona. Default `gemma3:4b` works on the target laptop (RTX A1000
