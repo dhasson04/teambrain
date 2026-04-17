@@ -61,15 +61,46 @@ async function buildDumpIndex(project: string, sub: string): Promise<Map<string,
   return index;
 }
 
-function bulletsRequiringCitation(markdown: string): { line: string; lineNumber: number }[] {
+interface BulletLine {
+  /** Trimmed line content. */
+  line: string;
+  /** 1-indexed line number within the document. */
+  lineNumber: number;
+  /** Inclusive start char-index of the raw (untrimmed) line in the document. */
+  start: number;
+  /** Exclusive end char-index of the raw line (not including the trailing newline). */
+  end: number;
+}
+
+/**
+ * Walk the markdown once, recording each bullet line's EXACT char-index range.
+ *
+ * The previous implementation stored only the trimmed content and later used
+ * `markdown.indexOf(trimmedLine)` to recover position, which returns the FIRST
+ * occurrence and silently assigns the wrong window to any bullet whose text
+ * happens to appear as a substring of an earlier line. That broke the
+ * requirePerBullet check for real renderer outputs where two bullets in
+ * Disputed shared long prefixes. Using the line-walk positions here makes
+ * every bullet's citation window deterministic regardless of document content.
+ */
+function bulletLines(markdown: string): BulletLine[] {
+  const out: BulletLine[] = [];
+  let cursor = 0;
   const lines = markdown.split(/\r?\n/);
-  const out: { line: string; lineNumber: number }[] = [];
-  lines.forEach((line, i) => {
-    const trimmed = line.trim();
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]!;
+    const start = cursor;
+    const end = cursor + raw.length;
+    // Advance cursor past this line plus its newline. We can't perfectly
+    // distinguish "\n" vs "\r\n" here without re-scanning, so sniff the
+    // character at `end` in the original markdown.
+    const nl = markdown[end] === "\r" && markdown[end + 1] === "\n" ? 2 : markdown[end] === "\n" ? 1 : 0;
+    cursor = end + nl;
+    const trimmed = raw.trim();
     if (trimmed.startsWith("- ") && trimmed.length > 4) {
-      out.push({ line: trimmed, lineNumber: i + 1 });
+      out.push({ line: trimmed, lineNumber: i + 1, start, end });
     }
-  });
+  }
   return out;
 }
 
@@ -125,11 +156,13 @@ export async function validateCitations(input: ValidateInput): Promise<Validatio
   }
 
   if (requirePerBullet) {
-    const bullets = bulletsRequiringCitation(input.markdown);
+    const bullets = bulletLines(input.markdown);
     for (const b of bullets) {
-      const hasCitation = citations.some(
-        (c) => c.index >= input.markdown.indexOf(b.line) && c.index < input.markdown.indexOf(b.line) + b.line.length + 200,
-      );
+      // A bullet is "cited" iff at least one citation's `[` character falls
+      // strictly inside that bullet's char-index range. No substring search,
+      // no ±200 char slop — position is derived from the line walk and cannot
+      // be confused by identical or prefix-shared bullet text elsewhere.
+      const hasCitation = citations.some((c) => c.index >= b.start && c.index < b.end);
       if (!hasCitation) {
         complaints.push({
           citation: { author: "", dump_id: "", index: -1, raw: b.line },
