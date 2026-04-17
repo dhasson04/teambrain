@@ -8,6 +8,7 @@ import {
   type DumpHashEntry,
   readLastSynthInput,
 } from "../vault/synthesis";
+import { extractHints, formatHintsBlock } from "./hints";
 import type { InferenceService } from "./inference-service";
 
 /**
@@ -121,12 +122,25 @@ export interface ExtractDumpInput {
  * re-prompts up to maxRetries times to fix bad quotes.
  */
 export async function extractFromDump(input: ExtractDumpInput): Promise<AttributedIdea[]> {
-  const maxRetries = input.maxRetries ?? loadConfig().extract_max_retries ?? 2;
+  const cfg = loadConfig();
+  const maxRetries = input.maxRetries ?? cfg.extract_max_retries ?? 2;
+  // R004: pre-extract hints deterministically. Gated by feature flag so
+  // the legacy no-hints path stays reachable during rollout.
+  let hintsBlock = "";
+  if (cfg.features?.hint_block_in_extractor !== false) {
+    try {
+      const hints = await extractHints(input.body);
+      hintsBlock = formatHintsBlock(hints);
+    } catch {
+      // Never let a hints failure block extraction.
+      hintsBlock = "";
+    }
+  }
   let lastError = "";
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const userMsg = `${EXTRACTION_INSTRUCTIONS}\n\n<dump author="${input.author}" id="${input.dumpId}">\n${input.body}\n</dump>${
-      attempt > 0 ? `\n\n<retry note>${lastError}</retry>` : ""
-    }`;
+      hintsBlock ? `\n\n${hintsBlock}` : ""
+    }${attempt > 0 ? `\n\n<retry note>${lastError}</retry>` : ""}`;
     const raw = await input.service.runToString({
       persona_id: "synthesis",
       // R001: structured `format` supersedes the legacy `json: true` flag.
