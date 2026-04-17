@@ -29,7 +29,7 @@
     "motion": "^12.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "reactflow": "^11.11.0",
+    "react-force-graph-2d": "^1.29.1",
     "tailwind-merge": "^2.5.0",
     "yaml": "^2.6.0",
     "zod": "^3.23.0"
