@@ -61,12 +61,16 @@ describe("validateCitations", () => {
     expect(result.repairInstruction).toContain("alice-bogus");
   });
 
-  test("complains when citation author does not match dump author", async () => {
+  // T003 / R003: author-mismatch is no longer a validator-level complaint.
+  // Enum-pinning the author field at the sampler (T001/T002) prevents the
+  // model from emitting an author not in the subproject's profile list, so
+  // the runtime check was redundant and caused every Gemma 3 render to fail.
+  test("does not flag author mismatches (enum-pinning handles this upstream)", async () => {
     const d1 = await createDump("acme", "q2", "alice", "x");
-    const md = `## Agreed\n- Bad [bob, ${d1.id}]\n`;
+    const md = `## Agreed\n- Cross-label [bob, ${d1.id}]\n`;
     const result = await validateCitations({ markdown: md, project: "acme", sub: "q2" });
-    expect(result.ok).toBe(false);
-    expect(result.complaints[0]?.reason).toContain("author mismatch");
+    expect(result.ok).toBe(true);
+    expect(result.complaints).toEqual([]);
   });
 
   test("complains about bullets without any citation when requirePerBullet is on", async () => {
