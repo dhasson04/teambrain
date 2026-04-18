@@ -77,88 +77,6 @@ export function buildRenderFormat(profiles: string[], dumpIds: string[]): object
   };
 }
 
-// Legacy unconstrained schema retained until T002 wires buildRenderFormat's
-// enum-pinned schema into renderSynthesis. No runtime use after that.
-const RENDER_FORMAT = {
-  type: "object",
-  properties: {
-    agreed: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          text: { type: "string", minLength: 1 },
-          citations: {
-            type: "array",
-            minItems: 1,
-            items: {
-              type: "object",
-              properties: {
-                author: { type: "string", minLength: 1 },
-                dump_id: { type: "string", minLength: 1 },
-              },
-              required: ["author", "dump_id"],
-              additionalProperties: false,
-            },
-          },
-        },
-        required: ["text", "citations"],
-        additionalProperties: false,
-      },
-    },
-    disputed: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          text: { type: "string", minLength: 1 },
-          citations: {
-            type: "array",
-            minItems: 2,
-            items: {
-              type: "object",
-              properties: {
-                author: { type: "string", minLength: 1 },
-                dump_id: { type: "string", minLength: 1 },
-              },
-              required: ["author", "dump_id"],
-              additionalProperties: false,
-            },
-          },
-        },
-        required: ["text", "citations"],
-        additionalProperties: false,
-      },
-    },
-    move_forward: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          text: { type: "string", minLength: 1 },
-          citations: {
-            type: "array",
-            minItems: 1,
-            items: {
-              type: "object",
-              properties: {
-                author: { type: "string", minLength: 1 },
-                dump_id: { type: "string", minLength: 1 },
-              },
-              required: ["author", "dump_id"],
-              additionalProperties: false,
-            },
-          },
-        },
-        required: ["text", "citations"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["agreed", "disputed", "move_forward"],
-  additionalProperties: false,
-} as const;
-
 interface RenderBullet {
   text: string;
   citations: Array<{ author: string; dump_id: string }>;
@@ -227,15 +145,31 @@ export async function renderSynthesis(input: RenderInput): Promise<RenderResult>
   if (bundle.ideas.ideas.length === 0) {
     throw new Error("no ideas to render — run extract + merge first");
   }
+  const attribution = await attributionWithDisplayNames(bundle.attribution);
   const compact = JSON.stringify(
     {
       ideas: bundle.ideas.ideas,
       connections: bundle.connections.connections,
-      attribution: await attributionWithDisplayNames(bundle.attribution),
+      attribution,
     },
     null,
     2,
   );
+
+  // R001 + R002: pin the JSON-schema enums to exactly the authors present in
+  // attribution (post-display-name resolution) and the dump-ids in the
+  // DumpHashEntry input set. The sampler then cannot emit an author or
+  // dump_id outside these closed sets. De-duplicate to keep the schema small
+  // and preserve input order for deterministic snapshotting.
+  const profileSet = new Set<string>();
+  for (const entries of Object.values(attribution)) {
+    for (const e of entries) profileSet.add(e.author);
+  }
+  const profiles = [...profileSet];
+  const dumpIdSet = new Set<string>();
+  for (const h of input.inputs) dumpIdSet.add(h.dump_id);
+  const dumpIds = [...dumpIdSet];
+  const renderFormat = buildRenderFormat(profiles, dumpIds);
 
   // R005: contextual retrieval over materials + problem.md. Feeds a
   // <project-context> block into the render prompt so materials
@@ -264,9 +198,10 @@ export async function renderSynthesis(input: RenderInput): Promise<RenderResult>
         : `${RENDER_INSTRUCTIONS}\n\n<context>\n${compact}\n</context>${contextBlock}\n\n<previous-output>\n${lastBody}\n</previous-output>\n\n<repair>\nThe previous output had these citation problems:\n${lastComplaints.join("\n- ")}\nRe-emit with those fixes.\n</repair>`;
     const raw = await input.service.runToString({
       persona_id: "synthesis",
-      // R001: sampler-enforced structured JSON. Section headers are
-      // assembled deterministically in assembleMarkdown below.
-      format: RENDER_FORMAT,
+      // R001 + R002: sampler-enforced structured JSON with author + dump_id
+      // enums pinned to this subproject's profiles and dump-ids. Section
+      // headers are assembled deterministically in assembleMarkdown below.
+      format: renderFormat,
       messages: [{ role: "user", content: userMsg }],
     });
     let json: RenderJson;
