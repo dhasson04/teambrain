@@ -1,6 +1,5 @@
 import { listDumps } from "../vault/dumps";
 import { parseFrontmatter } from "../vault/fs-utils";
-import { loadProfiles } from "../vault/profiles";
 
 export interface CitationRef {
   author: string;
@@ -110,12 +109,6 @@ export async function validateCitations(input: ValidateInput): Promise<Validatio
   const citations = parseCitations(input.markdown);
   const complaints: CitationComplaint[] = [];
 
-  // Resolve author display_name ↔ profile id so citations can be written in
-  // either form. After backprop-2 the renderer emits display_names; the
-  // validator must still accept legacy UUID-style authors too.
-  const profiles = await loadProfiles();
-  const displayByUuid = new Map(profiles.profiles.map((p) => [p.id, p.display_name]));
-
   const dumpIds = [...index.keys()];
 
   for (const c of citations) {
@@ -127,12 +120,10 @@ export async function validateCitations(input: ValidateInput): Promise<Validatio
     // and accept. If it's a prefix of multiple, emit an actionable
     // "ambiguous prefix" complaint with the candidates listed.
     if (!dump) {
-      // Suffix tolerance: gemma3:4b systematically confuses `idea_id`
-      // (which is `<dump_id>-i<N>`) with `dump_id` in the render prompt,
-      // producing citations that point at the exact idea the bullet is
-      // about. Strip a trailing `-iN` and retry. This is forgiveness, not
-      // correctness — the model is citing the wrong field but the intent
-      // is unambiguous.
+      // Suffix tolerance: defensive — kept even after T002 enum-pins dump_id
+      // at the sampler, because ollama/ollama#15260 reports GBNF enum leakage
+      // under long-context render prompts where the model occasionally emits
+      // an off-enum `<dump_id>-iN` idea-id. Strip a trailing `-iN` and retry.
       const suffixStripped = c.dump_id.replace(/-i\d+$/, "");
       if (suffixStripped !== c.dump_id) {
         dump = index.get(suffixStripped);
@@ -155,25 +146,6 @@ export async function validateCitations(input: ValidateInput): Promise<Validatio
     }
     if (!dump) continue;
 
-    const authorDisplay = displayByUuid.get(dump.author) ?? dump.author;
-    const citedAuthor = c.author.toLowerCase();
-    if (
-      dump.author.toLowerCase() !== citedAuthor &&
-      authorDisplay.toLowerCase() !== citedAuthor
-    ) {
-      // Author mismatch used to block the render. In practice, gemma3:4b
-      // hallucinates the author name on agreement-cluster citations (e.g.
-      // cites "bob" on carol's dump when both agreed on the statement),
-      // which caused every render to fail validation and synthesis to
-      // never write. We keep the check as a non-blocking warning: the
-      // citation still points at a real dump in this subproject, just
-      // with the wrong author label. Follow-up: enum-constrain the author
-      // field in the render JSON schema to this subproject's profiles.
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[validator] soft author mismatch: cited "${c.author}" on dump ${dump.id} authored by "${authorDisplay}"`,
-      );
-    }
   }
 
   if (requirePerBullet) {
