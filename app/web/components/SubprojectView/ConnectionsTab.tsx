@@ -294,11 +294,19 @@ export function ConnectionsTab({ project, sub }: ConnectionsTabProps) {
     const charge = graphRef.current.d3Force("charge");
     if (charge && typeof charge.strength === "function") charge.strength(-120);
     graphRef.current.d3Force("collide", forceCollide(28));
-    // Zoom to fit after the simulation settles a bit.
-    const t = setTimeout(() => {
-      if (graphRef.current) graphRef.current.zoomToFit(800, 60);
-    }, 1200);
-    return () => clearTimeout(t);
+    // Re-heat the simulation so the new forces actually take effect on an
+    // already-mounted graph, then frame it once it settles. zoomToFit on a
+    // timer fires before the cooldown finishes, so we schedule a couple of
+    // follow-up reframes.
+    if (typeof graphRef.current.d3ReheatSimulation === "function") {
+      graphRef.current.d3ReheatSimulation();
+    }
+    const t1 = setTimeout(() => graphRef.current?.zoomToFit(600, 60), 1500);
+    const t2 = setTimeout(() => graphRef.current?.zoomToFit(600, 60), 3500);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [graphData.nodes, clusterCenters]);
 
   // --- Breathing-pulse RAF loop ----------------------------------------------
