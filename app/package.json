@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test": "bun test",
     "test:integration": "bun test src/inference/pipeline.integration.test.ts",
+    "test:nli": "bun test src/inference/nli.integration.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

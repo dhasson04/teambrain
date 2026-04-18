@@ -1,0 +1,26 @@
+[
+  {
+    "id": "blatant-contradict",
+    "premise": "We need to ship the launch by May 1 — that's the whole point of Q2.",
+    "hypothesis": "Let's push the launch past May. The market isn't ready.",
+    "expected": "contradict"
+  },
+  {
+    "id": "subtle-contradict",
+    "premise": "Putting billing at step 3 broke the funnel; we should move it later.",
+    "hypothesis": "Billing at step 3 is what creates intent. Moving it later would erode conversion.",
+    "expected": "contradict"
+  },
+  {
+    "id": "paraphrase-entail",
+    "premise": "We should A/B test the new signup flow before rolling it out broadly.",
+    "hypothesis": "Let's run a controlled experiment on the new flow before full launch.",
+    "expected": "entail"
+  },
+  {
+    "id": "topical-neutral",
+    "premise": "The credit-card form is the barrier — it's visually heavy on the page.",
+    "hypothesis": "Dan hasn't contributed his analysis of the small-business cohort yet.",
+    "expected": "neutral"
+  }
+]

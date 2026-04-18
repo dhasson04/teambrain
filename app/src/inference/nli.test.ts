@@ -1,110 +1,256 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { InferenceService } from "./inference-service";
 import {
   classifyPair,
   findContradictionCandidates,
-  isDegradedModeForTest,
-  resetNliForTest,
+  NLI_SCHEMA,
+  type NliLabel,
 } from "./nli";
+import type { FetchLike } from "./ollama-health";
+import { PromptRegistry } from "./prompt-registry";
 
-let nliAvailable = false;
-let nliFunctional = false;
+const SYNTH_PROMPT = `---
+id: synthesis
+version: 0.1.0
+model: gemma3:4b
+temperature: 0.4
+top_p: 0.8
+top_k: 40
+description: test
+includes:
+  - _shared/h.md
+---
+SYNTH BODY
+`;
 
-// First-time model download can take > 60s. Subsequent runs are fast.
-beforeAll(async () => {
+async function seedRegistry(dir: string): Promise<PromptRegistry> {
+  await mkdir(`${dir}/_shared`, { recursive: true });
+  await writeFile(`${dir}/synthesis.md`, SYNTH_PROMPT);
+  await writeFile(`${dir}/_shared/h.md`, "SHARED");
+  const registry = new PromptRegistry({ promptsDir: dir });
+  await registry.load();
+  return registry;
+}
+
+/**
+ * Fetcher that captures every request body sent to Ollama and responds with
+ * a streaming NDJSON payload containing the supplied label/confidence.
+ */
+function mockOllamaFetch(
+  label: NliLabel,
+  confidence: number,
+  capturedBodies: unknown[],
+): FetchLike {
+  return async (_url, init) => {
+    capturedBodies.push(JSON.parse((init?.body as string) ?? "{}"));
+    const json = JSON.stringify({ label, confidence });
+    const chunks = [
+      { message: { content: json } },
+      { done: true, prompt_eval_count: 10, eval_count: 5 },
+    ];
+    const body = chunks.map((c) => `${JSON.stringify(c)}\n`).join("");
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "application/x-ndjson" },
+    });
+  };
+}
+
+async function withRegistry<T>(fn: (registry: PromptRegistry) => Promise<T>): Promise<T> {
+  const dir = await mkdtemp(join(tmpdir(), "teambrain-nli-"));
   try {
-    await classifyPair("The sky is blue.", "The sky is not blue.");
-    nliAvailable = true;
-    // nli.ts auto-probes and sets degradedMode when transformers.js
-    // misbehaves. If it's in degraded mode, tests can only verify the
-    // "returns no false positives" contract, not the "finds real
-    // contradictions" contract.
-    nliFunctional = !isDegradedModeForTest();
-  } catch (e) {
-    console.warn(`[nli.test] NLI pipeline unavailable: ${(e as Error).message}`);
-    nliAvailable = false;
+    const registry = await seedRegistry(dir);
+    return await fn(registry);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
-}, 600000);
+}
 
-afterAll(() => {
-  resetNliForTest();
+describe("classifyPair (NLI via Ollama + enum JSON, R001)", () => {
+  test("sends a request whose format.properties.label.enum is [contradict, entail, neutral]", async () => {
+    await withRegistry(async (registry) => {
+      const captured: unknown[] = [];
+      const svc = new InferenceService({
+        registry,
+        ollama_url: "http://x",
+        fetcher: mockOllamaFetch("contradict", 0.9, captured),
+      });
+      await classifyPair(svc, "We ship May 1.", "Push launch past May.");
+      expect(captured).toHaveLength(1);
+      const body = captured[0] as { format?: { properties?: { label?: { enum?: string[] } } } };
+      expect(body.format?.properties?.label?.enum).toEqual(["contradict", "entail", "neutral"]);
+    });
+  });
+
+  test("passes temperature: 0 to Ollama for determinism", async () => {
+    await withRegistry(async (registry) => {
+      const captured: unknown[] = [];
+      const svc = new InferenceService({
+        registry,
+        ollama_url: "http://x",
+        fetcher: mockOllamaFetch("entail", 0.8, captured),
+      });
+      await classifyPair(svc, "p", "h");
+      const body = captured[0] as { options?: { temperature?: number } };
+      expect(body.options?.temperature).toBe(0);
+    });
+  });
+
+  test("derives NliScores from single-label response: emitted label gets confidence, others get (1 - c) / 2", async () => {
+    await withRegistry(async (registry) => {
+      const svc = new InferenceService({
+        registry,
+        ollama_url: "http://x",
+        fetcher: mockOllamaFetch("contradict", 0.8, []),
+      });
+      const scores = await classifyPair(svc, "p", "h");
+      expect(scores.contradiction).toBeCloseTo(0.8, 5);
+      expect(scores.entailment).toBeCloseTo(0.1, 5);
+      expect(scores.neutral).toBeCloseTo(0.1, 5);
+    });
+  });
+
+  test("entail label routes confidence into the entailment slot", async () => {
+    await withRegistry(async (registry) => {
+      const svc = new InferenceService({
+        registry,
+        ollama_url: "http://x",
+        fetcher: mockOllamaFetch("entail", 0.7, []),
+      });
+      const scores = await classifyPair(svc, "p", "h");
+      expect(scores.entailment).toBeCloseTo(0.7, 5);
+      expect(scores.contradiction).toBeCloseTo(0.15, 5);
+      expect(scores.neutral).toBeCloseTo(0.15, 5);
+    });
+  });
+
+  test("neutral label routes confidence into the neutral slot", async () => {
+    await withRegistry(async (registry) => {
+      const svc = new InferenceService({
+        registry,
+        ollama_url: "http://x",
+        fetcher: mockOllamaFetch("neutral", 0.6, []),
+      });
+      const scores = await classifyPair(svc, "p", "h");
+      expect(scores.neutral).toBeCloseTo(0.6, 5);
+      expect(scores.contradiction).toBeCloseTo(0.2, 5);
+      expect(scores.entailment).toBeCloseTo(0.2, 5);
+    });
+  });
+
+  test("throws when Ollama returns non-JSON", async () => {
+    await withRegistry(async (registry) => {
+      const badFetch: FetchLike = async () => {
+        const chunks = [
+          { message: { content: "not-json-at-all" } },
+          { done: true, prompt_eval_count: 1, eval_count: 1 },
+        ];
+        const body = chunks.map((c) => `${JSON.stringify(c)}\n`).join("");
+        return new Response(body, { status: 200, headers: { "content-type": "application/x-ndjson" } });
+      };
+      const svc = new InferenceService({ registry, ollama_url: "http://x", fetcher: badFetch });
+      await expect(classifyPair(svc, "p", "h")).rejects.toThrow(/not valid JSON/i);
+    });
+  });
 });
 
-describe("classifyPair (NLI, R003)", () => {
-  test("degraded mode detection — returns zeros when pipeline misbehaves", async () => {
-    if (!nliAvailable) return;
-    if (nliFunctional) return; // this test only asserts the degraded-mode contract
-    const s = await classifyPair("anything", "anything else");
-    expect(s.contradiction).toBe(0);
-    expect(s.entailment).toBe(0);
-    expect(s.neutral).toBe(0);
+describe("NLI_SCHEMA shape", () => {
+  test("is a proper JSON Schema object with the three-label enum and number confidence", () => {
+    expect(NLI_SCHEMA.type).toBe("object");
+    expect(NLI_SCHEMA.properties.label.enum).toEqual(["contradict", "entail", "neutral"]);
+    expect(NLI_SCHEMA.properties.confidence.type).toBe("number");
+    expect(NLI_SCHEMA.required).toContain("label");
+    expect(NLI_SCHEMA.required).toContain("confidence");
   });
 
-  test("identifies obvious contradictions (skipped in degraded mode)", async () => {
-    if (!nliAvailable || !nliFunctional) return;
-    const s = await classifyPair(
-      "We will ship the product on May 1.",
-      "We will not ship the product on May 1; we are pushing to June.",
-    );
-    expect(s.contradiction).toBeGreaterThan(s.entailment);
-    expect(s.contradiction).toBeGreaterThan(0.5);
+  test("field order is stance_a, stance_b, topic_shared, label, confidence (R002 chain-of-thought)", () => {
+    // Object.keys preserves declaration order for string keys per ES2015,
+    // and Ollama's constrained decoder honors JSON schema property order
+    // when emitting tokens. Stance fields must come BEFORE label so the
+    // model commits to each speaker's position before picking a label.
+    expect(Object.keys(NLI_SCHEMA.properties)).toEqual([
+      "stance_a",
+      "stance_b",
+      "topic_shared",
+      "label",
+      "confidence",
+    ]);
   });
 
-  test("identifies obvious entailments (skipped in degraded mode)", async () => {
-    if (!nliAvailable || !nliFunctional) return;
-    const s = await classifyPair("All the tests are passing.", "The test suite is green.");
-    expect(s.entailment).toBeGreaterThan(s.contradiction);
+  test("stance_a and stance_b require at least one character", () => {
+    expect(NLI_SCHEMA.properties.stance_a.type).toBe("string");
+    expect(NLI_SCHEMA.properties.stance_a.minLength).toBe(1);
+    expect(NLI_SCHEMA.properties.stance_b.type).toBe("string");
+    expect(NLI_SCHEMA.properties.stance_b.minLength).toBe(1);
   });
 
-  test("identifies neutral pairs (skipped in degraded mode)", async () => {
-    if (!nliAvailable || !nliFunctional) return;
-    const s = await classifyPair(
-      "The billing form is too long.",
-      "We should add dark mode to the marketing site.",
-    );
-    expect(s.contradiction).toBeLessThan(0.6);
+  test("topic_shared is boolean", () => {
+    expect(NLI_SCHEMA.properties.topic_shared.type).toBe("boolean");
   });
 });
 
 describe("findContradictionCandidates (R003 bi-directional + margin guards)", () => {
-  test("returns [] when NLI is in degraded mode — zero false positives by construction", async () => {
-    if (!nliAvailable) return;
-    if (nliFunctional) return; // functional-mode assertions below
-    const results = await findContradictionCandidates([
-      {
-        idea_a_id: "i1",
-        idea_a_text: "We ship by May 1. Full stop.",
-        idea_b_id: "i2",
-        idea_b_text: "We should push the launch past May.",
-      },
-    ]);
-    expect(results).toEqual([]);
+  test("returns [] for an empty input list without calling Ollama", async () => {
+    await withRegistry(async (registry) => {
+      let calls = 0;
+      const svc = new InferenceService({
+        registry,
+        ollama_url: "http://x",
+        fetcher: (async () => {
+          calls++;
+          return new Response("", { status: 500 });
+        }) as FetchLike,
+      });
+      const out = await findContradictionCandidates(svc, []);
+      expect(out).toEqual([]);
+      expect(calls).toBe(0);
+    });
   });
 
-  test("confirms a pair that contradicts in both directions (skipped in degraded mode)", async () => {
-    if (!nliAvailable || !nliFunctional) return;
-    const results = await findContradictionCandidates([
-      {
-        idea_a_id: "i1",
-        idea_a_text: "We ship by May 1. Full stop.",
-        idea_b_id: "i2",
-        idea_b_text: "We should push the launch past May.",
-      },
-    ]);
-    expect(results).toHaveLength(1);
-    expect(results[0]?.idea_a_id).toBe("i1");
-    expect(results[0]?.idea_b_id).toBe("i2");
+  test("confirms a pair when both directions return contradict with confidence >= 0.6", async () => {
+    await withRegistry(async (registry) => {
+      const svc = new InferenceService({
+        registry,
+        ollama_url: "http://x",
+        fetcher: mockOllamaFetch("contradict", 0.9, []),
+      });
+      const out = await findContradictionCandidates(svc, [
+        { idea_a_id: "i1", idea_a_text: "ship may 1", idea_b_id: "i2", idea_b_text: "push past may" },
+      ]);
+      expect(out).toHaveLength(1);
+      expect(out[0]?.idea_a_id).toBe("i1");
+      expect(out[0]?.idea_b_id).toBe("i2");
+    });
   });
 
-  test("rejects a non-contradiction pair (skipped in degraded mode)", async () => {
-    if (!nliAvailable || !nliFunctional) return;
-    const results = await findContradictionCandidates([
-      {
-        idea_a_id: "i1",
-        idea_a_text: "Rollback plan: feature flag toggle.",
-        idea_b_id: "i2",
-        idea_b_text: "The live test starts today and reports April 24.",
-      },
-    ]);
-    expect(results).toHaveLength(0);
+  test("rejects a pair when the model returns entail", async () => {
+    await withRegistry(async (registry) => {
+      const svc = new InferenceService({
+        registry,
+        ollama_url: "http://x",
+        fetcher: mockOllamaFetch("entail", 0.9, []),
+      });
+      const out = await findContradictionCandidates(svc, [
+        { idea_a_id: "i1", idea_a_text: "a", idea_b_id: "i2", idea_b_text: "b" },
+      ]);
+      expect(out).toHaveLength(0);
+    });
+  });
+
+  test("rejects a pair when confidence is below 0.6 (margin rule)", async () => {
+    await withRegistry(async (registry) => {
+      const svc = new InferenceService({
+        registry,
+        ollama_url: "http://x",
+        fetcher: mockOllamaFetch("contradict", 0.55, []),
+      });
+      const out = await findContradictionCandidates(svc, [
+        { idea_a_id: "i1", idea_a_text: "a", idea_b_id: "i2", idea_b_text: "b" },
+      ]);
+      expect(out).toHaveLength(0);
+    });
   });
 });
