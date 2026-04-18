@@ -38,31 +38,56 @@ export type NliLabel = "contradict" | "entail" | "neutral";
 /**
  * JSON schema passed to Ollama's `format` field. Field order matters —
  * Ollama's constrained decoder populates the object in declared order, so
- * later fields see earlier fields' contents as context. T002 prepends
- * stance fields to force structured chain-of-thought.
+ * later fields see earlier fields' contents as context. The stance fields
+ * (stance_a, stance_b, topic_shared) land BEFORE label to function as
+ * structured chain-of-thought: the model must commit to each speaker's
+ * position and whether they share a topic before it picks a label. This
+ * fixes the same-topic-opposite-stance misclassification the spike
+ * identified at 2026-04-18 (R002).
  */
 export const NLI_SCHEMA = {
   type: "object",
   properties: {
+    stance_a: { type: "string", minLength: 1 },
+    stance_b: { type: "string", minLength: 1 },
+    topic_shared: { type: "boolean" },
     label: { type: "string", enum: ["contradict", "entail", "neutral"] },
     confidence: { type: "number", minimum: 0, maximum: 1 },
   },
-  required: ["label", "confidence"],
+  required: ["stance_a", "stance_b", "topic_shared", "label", "confidence"],
   additionalProperties: false,
 } as const;
 
 /**
- * System prompt for the NLI persona. Kept terse — the schema does most of
- * the steering. T002 extends this with stance-aware guidance.
+ * System prompt for the NLI persona. Asks the model to (a) write each
+ * speaker's position on any shared topic first, (b) apply the rule that
+ * same topic with opposite positions = contradict (not entail), and
+ * (c) follow a worked example demonstrating that rule. The schema field
+ * ordering above enforces the sequencing at the sampler level.
  */
-export const NLI_SYSTEM_PROMPT = `You are a strict Natural Language Inference classifier. Given a PREMISE and a HYPOTHESIS, decide whether the HYPOTHESIS:
-- contradict: directly disagrees with or negates the PREMISE
-- entail: re-states, paraphrases, or logically follows from the PREMISE
-- neutral: talks about a different topic, or the relationship is unclear
+export const NLI_SYSTEM_PROMPT = `You are a strict Natural Language Inference classifier. Given a PREMISE (statement A) and a HYPOTHESIS (statement B), decide the relationship between them.
+
+Before choosing a label, first write the position each speaker is taking on any shared topic into stance_a and stance_b, then decide whether the two statements address the same topic (topic_shared).
+
+Label rules:
+- contradict: the two statements address the same topic but take opposite or incompatible positions. Same topic with opposite positions = contradict, not entail.
+- entail: the HYPOTHESIS re-states, paraphrases, or logically follows from the PREMISE (same position on the same topic).
+- neutral: the statements address different topics, or the relationship is unclear.
+
+Worked example:
+PREMISE: "Putting billing at step 3 broke the funnel; we should move it later."
+HYPOTHESIS: "Billing at step 3 is what creates intent. Moving it later would erode conversion."
+stance_a: "Billing at step 3 is harmful; move it later"
+stance_b: "Billing at step 3 is beneficial; keep it at step 3"
+topic_shared: true
+label: contradict (same topic — billing-step-3 placement — opposite positions)
 
 Return JSON only. No prose outside the JSON.`;
 
 interface NliRawResponse {
+  stance_a?: string;
+  stance_b?: string;
+  topic_shared?: boolean;
   label: NliLabel;
   confidence: number;
 }

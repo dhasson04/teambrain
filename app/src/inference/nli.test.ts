@@ -165,6 +165,31 @@ describe("NLI_SCHEMA shape", () => {
     expect(NLI_SCHEMA.required).toContain("label");
     expect(NLI_SCHEMA.required).toContain("confidence");
   });
+
+  test("field order is stance_a, stance_b, topic_shared, label, confidence (R002 chain-of-thought)", () => {
+    // Object.keys preserves declaration order for string keys per ES2015,
+    // and Ollama's constrained decoder honors JSON schema property order
+    // when emitting tokens. Stance fields must come BEFORE label so the
+    // model commits to each speaker's position before picking a label.
+    expect(Object.keys(NLI_SCHEMA.properties)).toEqual([
+      "stance_a",
+      "stance_b",
+      "topic_shared",
+      "label",
+      "confidence",
+    ]);
+  });
+
+  test("stance_a and stance_b require at least one character", () => {
+    expect(NLI_SCHEMA.properties.stance_a.type).toBe("string");
+    expect(NLI_SCHEMA.properties.stance_a.minLength).toBe(1);
+    expect(NLI_SCHEMA.properties.stance_b.type).toBe("string");
+    expect(NLI_SCHEMA.properties.stance_b.minLength).toBe(1);
+  });
+
+  test("topic_shared is boolean", () => {
+    expect(NLI_SCHEMA.properties.topic_shared.type).toBe("boolean");
+  });
 });
 
 describe("findContradictionCandidates (R003 bi-directional + margin guards)", () => {
