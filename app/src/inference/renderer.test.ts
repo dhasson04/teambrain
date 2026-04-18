@@ -12,7 +12,7 @@ import { createProject } from "../vault/projects";
 import { createSubproject } from "../vault/subprojects";
 import { InferenceService, type InferenceEvent, type RunInput } from "./inference-service";
 import { PromptRegistry } from "./prompt-registry";
-import { renderSynthesis } from "./renderer";
+import { buildRenderFormat, renderSynthesis } from "./renderer";
 
 let dir: string;
 let originalVault: string | undefined;
@@ -148,5 +148,30 @@ describe("renderSynthesis", () => {
         inputs: [],
       }),
     ).rejects.toThrow(/no ideas/);
+  });
+});
+
+// T001 / R001 + R002: buildRenderFormat pins citation.author and
+// citation.dump_id to closed enums of the subproject's profiles and dump-ids.
+// Enum-at-the-sampler makes invented authors and hallucinated dump-ids
+// structurally impossible in the model output.
+describe("buildRenderFormat", () => {
+  test("pins author and dump_id to provided enums in every citation object", () => {
+    const profiles = ["Alice", "Bob", "Carol"];
+    const dumpIds = ["dump-alpha-2026-01-01T00-00-00-000z", "dump-beta-2026-01-02T00-00-00-000z"];
+    const schema = buildRenderFormat(profiles, dumpIds) as {
+      properties: {
+        agreed: { items: { properties: { citations: { items: Record<string, unknown> } } } };
+        disputed: { items: { properties: { citations: { items: Record<string, unknown> } } } };
+        move_forward: { items: { properties: { citations: { items: Record<string, unknown> } } } };
+      };
+    };
+    for (const bucket of ["agreed", "disputed", "move_forward"] as const) {
+      const citation = schema.properties[bucket].items.properties.citations.items as {
+        properties: { author: { enum: string[] }; dump_id: { enum: string[] } };
+      };
+      expect(citation.properties.author.enum).toEqual(profiles);
+      expect(citation.properties.dump_id.enum).toEqual(dumpIds);
+    }
   });
 });

@@ -32,6 +32,53 @@ Return strict JSON per the provided schema. No preamble, no prose outside
 the JSON.
 `;
 
+/**
+ * R001 / R002: Build the structured-output JSON schema with author + dump_id
+ * enums that pin citations to the exact profiles and dumps present in this
+ * subproject. Enum-constraining at the sampler makes it structurally
+ * impossible for the model to hallucinate an author that doesn't exist or
+ * cite a dump-id that isn't in the input set. Callers pass the distinct
+ * display names from attribution and the dump_ids from the DumpHashEntry
+ * inputs; both lists must be non-empty to produce a well-formed schema.
+ */
+export function buildRenderFormat(profiles: string[], dumpIds: string[]): object {
+  const citation = {
+    type: "object",
+    properties: {
+      author: { type: "string", enum: profiles },
+      dump_id: { type: "string", enum: dumpIds },
+    },
+    required: ["author", "dump_id"],
+    additionalProperties: false,
+  } as const;
+  const bullet = (minCitations: number) =>
+    ({
+      type: "object",
+      properties: {
+        text: { type: "string", minLength: 1 },
+        citations: {
+          type: "array",
+          minItems: minCitations,
+          items: citation,
+        },
+      },
+      required: ["text", "citations"],
+      additionalProperties: false,
+    }) as const;
+  return {
+    type: "object",
+    properties: {
+      agreed: { type: "array", items: bullet(1) },
+      disputed: { type: "array", items: bullet(2) },
+      move_forward: { type: "array", items: bullet(1) },
+    },
+    required: ["agreed", "disputed", "move_forward"],
+    additionalProperties: false,
+  };
+}
+
+// Legacy unconstrained schema retained until T002 wires buildRenderFormat's
+// enum-pinned schema into renderSynthesis. No runtime use after that.
 const RENDER_FORMAT = {
   type: "object",
   properties: {
