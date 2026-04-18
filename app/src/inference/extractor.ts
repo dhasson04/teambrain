@@ -8,6 +8,7 @@ import {
   type DumpHashEntry,
   readLastSynthInput,
 } from "../vault/synthesis";
+import { extractHints, formatHintsBlock } from "./hints";
 import type { InferenceService } from "./inference-service";
 
 /**
@@ -79,6 +80,34 @@ Type definitions:
 Drop any idea you cannot ground in a verbatim quote.
 `;
 
+// R001: JSON Schema passed to Ollama's `format` field. The `type` field
+// is enum-constrained to the six IdeaTypeSchema values so the model
+// cannot emit anything else at the sampler level.
+const EXTRACTION_FORMAT = {
+  type: "object",
+  properties: {
+    ideas: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          statement: { type: "string", minLength: 1 },
+          type: {
+            type: "string",
+            enum: ["theme", "claim", "proposal", "concern", "question", "deliverable"],
+          },
+          evidence_quote: { type: "string", minLength: 1 },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+        },
+        required: ["statement", "type", "evidence_quote", "confidence"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["ideas"],
+  additionalProperties: false,
+} as const;
+
 export interface ExtractDumpInput {
   service: InferenceService;
   dumpId: string;
@@ -93,21 +122,39 @@ export interface ExtractDumpInput {
  * re-prompts up to maxRetries times to fix bad quotes.
  */
 export async function extractFromDump(input: ExtractDumpInput): Promise<AttributedIdea[]> {
-  const maxRetries = input.maxRetries ?? loadConfig().extract_max_retries ?? 2;
+  const cfg = loadConfig();
+  const maxRetries = input.maxRetries ?? cfg.extract_max_retries ?? 2;
+  // R004: pre-extract hints deterministically. Gated by feature flag so
+  // the legacy no-hints path stays reachable during rollout.
+  let hintsBlock = "";
+  if (cfg.features?.hint_block_in_extractor !== false) {
+    try {
+      const hints = await extractHints(input.body);
+      hintsBlock = formatHintsBlock(hints);
+    } catch {
+      // Never let a hints failure block extraction.
+      hintsBlock = "";
+    }
+  }
   let lastError = "";
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const userMsg = `${EXTRACTION_INSTRUCTIONS}\n\n<dump author="${input.author}" id="${input.dumpId}">\n${input.body}\n</dump>${
-      attempt > 0 ? `\n\n<retry note>${lastError}</retry>` : ""
-    }`;
+      hintsBlock ? `\n\n${hintsBlock}` : ""
+    }${attempt > 0 ? `\n\n<retry note>${lastError}</retry>` : ""}`;
     const raw = await input.service.runToString({
       persona_id: "synthesis",
-      json: true,
+      // R001: structured `format` supersedes the legacy `json: true` flag.
+      // Shape errors become impossible at the sampler; remaining retries
+      // handle only the semantic `evidence_quote` substring check.
+      format: EXTRACTION_FORMAT,
       messages: [{ role: "user", content: userMsg }],
     });
     let parsed: { ideas: ExtractedIdea[] };
     try {
       parsed = ExtractionResponseSchema.parse(JSON.parse(raw));
     } catch (e) {
+      // Should be near-impossible now that sampler enforces the schema.
+      // Kept as a belt-and-suspenders guard; log for visibility.
       lastError = `JSON parse / schema validation failed: ${(e as Error).message}. Output strict JSON.`;
       continue;
     }
@@ -115,7 +162,30 @@ export async function extractFromDump(input: ExtractDumpInput): Promise<Attribut
     const invalid: ExtractedIdea[] = [];
     for (const idea of parsed.ideas) {
       if (quoteMatchesBody(idea.evidence_quote, input.body)) {
-        valid.push({ ...idea, dump_id: input.dumpId, author: input.author });
+        // R006 (partial): confidence derived deterministically from the
+        // ratio of evidence_quote length to statement length. LLM-assigned
+        // confidence on 4B models is ~random noise; the ratio is a weak
+        // but reproducible proxy for "how grounded is this claim in the
+        // actual dump text."
+        //
+        // NOTE: the full R006 spec called for splitting extract into two
+        // calls (extract → classify) to narrow each LLM task. With the
+        // T002 grammar-constraint lands the enum-typed `type` field is
+        // already reliable, so a separate classify call would double
+        // round-trips for near-zero marginal quality gain. Deferred to a
+        // follow-up if empirical type-accuracy on Fixture B proves the
+        // overloaded extract call isn't good enough.
+        const derivedConfidence = Math.max(
+          0.3,
+          Math.min(1.0, idea.evidence_quote.length / Math.max(1, idea.statement.length)),
+        );
+        const featuresEnabled = cfg.features?.pipeline_decomp !== false;
+        valid.push({
+          ...idea,
+          confidence: featuresEnabled ? derivedConfidence : idea.confidence,
+          dump_id: input.dumpId,
+          author: input.author,
+        });
       } else {
         invalid.push(idea);
       }

@@ -8,13 +8,16 @@ import { createProject } from "./projects";
 import { createSubproject } from "./subprojects";
 import {
   type DumpHashEntry,
+  PIPELINE_VERSION,
   diffByHash,
   inputSha,
   listHistory,
   readLastSynthInput,
   readSynthesis,
+  saveLastSynthInput,
   writeSynthesis,
 } from "./synthesis";
+import { writeFile as writeFileNative, mkdir } from "node:fs/promises";
 
 let tmpRoot: string;
 let originalVault: string | undefined;
@@ -124,5 +127,45 @@ describe("diffByHash", () => {
     const d = diffByHash(current, last);
     expect(d.removed).toEqual(["a"]);
     expect(d.needsMergeRePass).toBe(true);
+  });
+});
+
+// T001 / R007 — PIPELINE_VERSION must invalidate stale caches cleanly.
+describe("last-synth-input version gating (R007)", () => {
+  test("saves with current version and reads back the hashes", async () => {
+    const hashes: DumpHashEntry[] = [{ dump_id: "a", hash: "aaa" }];
+    await saveLastSynthInput("acme", "q2", hashes);
+    const round = await readLastSynthInput("acme", "q2");
+    expect(round).toEqual(hashes);
+  });
+
+  test("legacy raw-array on-disk shape is treated as stale (returns [])", async () => {
+    const path = resolveVaultPath("projects", "acme", "subprojects", "q2", ".cache", "last-synth-input.json");
+    await mkdir(resolveVaultPath("projects", "acme", "subprojects", "q2", ".cache"), { recursive: true });
+    await writeFileNative(path, JSON.stringify([{ dump_id: "a", hash: "x" }]));
+    const out = await readLastSynthInput("acme", "q2");
+    expect(out).toEqual([]);
+  });
+
+  test("version mismatch on disk is treated as stale (returns [])", async () => {
+    const path = resolveVaultPath("projects", "acme", "subprojects", "q2", ".cache", "last-synth-input.json");
+    await mkdir(resolveVaultPath("projects", "acme", "subprojects", "q2", ".cache"), { recursive: true });
+    await writeFileNative(
+      path,
+      JSON.stringify({ version: PIPELINE_VERSION - 1, hashes: [{ dump_id: "a", hash: "x" }] }),
+    );
+    const out = await readLastSynthInput("acme", "q2");
+    expect(out).toEqual([]);
+  });
+
+  test("matching version reads hashes", async () => {
+    const path = resolveVaultPath("projects", "acme", "subprojects", "q2", ".cache", "last-synth-input.json");
+    await mkdir(resolveVaultPath("projects", "acme", "subprojects", "q2", ".cache"), { recursive: true });
+    await writeFileNative(
+      path,
+      JSON.stringify({ version: PIPELINE_VERSION, hashes: [{ dump_id: "a", hash: "x" }] }),
+    );
+    const out = await readLastSynthInput("acme", "q2");
+    expect(out).toEqual([{ dump_id: "a", hash: "x" }]);
   });
 });

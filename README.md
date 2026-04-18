@@ -121,6 +121,39 @@ contract.
 
 ---
 
+## Pipeline quality features (feature flags)
+
+The v2 synthesis pipeline (spec-pipeline-quality) pushes structural decisions
+out of the 4B LLM and into deterministic code. Every leverage is gated by a
+flag in `config.json` so rollback is one line. All flags default to `true`.
+
+```json
+{
+  "features": {
+    "grammar_constrained_output": true,   // R001 — Ollama `format` JSON Schema on extract/merge/render. '## Concerns' drift impossible.
+    "embedding_cluster": true,            // R002 — MiniLM + agglomerative clustering replaces the LLM merge pass.
+    "nli_contradict": true,               // R003 — DeBERTa-v3-xsmall NLI for contradictions. Degraded mode auto-detected; see nli.ts.
+    "hint_block_in_extractor": true,      // R004 — compromise.js noun-phrase hints prepended to extract prompt.
+    "retrieval_at_render": true,          // R005 — materials/*.md + problem.md indexed + retrieved at render. Closes "Big Lie".
+    "pipeline_decomp": true               // R006 — deterministic confidence from evidence_quote/statement ratio.
+  },
+  "cluster_threshold": 0.55,              // cosine threshold for agglomerative clustering. Lower = more aggressive clustering.
+  "extract_max_retries": 2                // per-dump extract retries on evidence_quote substring failure.
+}
+```
+
+Dependencies: `@huggingface/transformers` (embeddings + NLI, ~150 MB ONNX cache
+under `~/.cache/huggingface/` on first run) and `compromise` (~2 MB pure-JS NLP).
+Both install via plain `bun install`. No Python sidecar, no GPU beyond what
+Ollama already needs.
+
+Known T008 (NLI) blocker: transformers.js v4.1 + Xenova's NLI ONNX port
+doesn't feed `text_pair` through the pipeline. Auto-detected; module returns
+`[]` for contradictions gracefully. See `app/src/inference/nli.ts` header for
+three follow-up paths.
+
+---
+
 ## Tech stack
 
 - **Frontend**: Vite + React 19 + TypeScript + Tailwind v4 + shadcn/ui + Motion

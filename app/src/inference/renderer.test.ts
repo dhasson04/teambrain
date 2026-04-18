@@ -12,7 +12,7 @@ import { createProject } from "../vault/projects";
 import { createSubproject } from "../vault/subprojects";
 import { InferenceService, type InferenceEvent, type RunInput } from "./inference-service";
 import { PromptRegistry } from "./prompt-registry";
-import { renderSynthesis } from "./renderer";
+import { buildRenderFormat, renderSynthesis } from "./renderer";
 
 let dir: string;
 let originalVault: string | undefined;
@@ -72,10 +72,19 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+// T002 / R001: renderer now emits structured JSON; fake responses match the
+// new RENDER_FORMAT schema, and the module assembles markdown server-side.
+function goodJson(cites: Array<{ author: string; dump_id: string }>): string {
+  return JSON.stringify({
+    agreed: [{ text: "Step 3 too early in funnel", citations: cites }],
+    disputed: [],
+    move_forward: [],
+  });
+}
+
 describe("renderSynthesis", () => {
   test("writes synthesis/latest.md when output passes citation validation", async () => {
-    const goodOutput = `## Agreed\n- Step 3 too early in funnel [alice, ${dumpId}]\n\n## Disputed\n\n## Move forward\n`;
-    const svc = new FakeService([goodOutput]);
+    const svc = new FakeService([goodJson([{ author: "alice", dump_id: dumpId }])]);
     const result = await renderSynthesis({
       service: svc,
       project: "acme",
@@ -86,12 +95,16 @@ describe("renderSynthesis", () => {
     expect(result.ok).toBe(true);
     expect(result.attempts).toBe(1);
     expect(existsSync(resolveVaultPath("projects", "acme", "subprojects", "q2", "synthesis", "latest.md"))).toBe(true);
+    // Section headers are structurally assembled, not model-generated.
+    expect(result.body).toContain("## Agreed");
+    expect(result.body).toContain("## Disputed");
+    expect(result.body).toContain("## Move forward");
   });
 
   test("re-prompts on bad citation, succeeds on retry", async () => {
-    const badOutput = `## Agreed\n- Step 3 too early [alice, ghost-dump]\n\n## Disputed\n\n## Move forward\n`;
-    const goodOutput = `## Agreed\n- Step 3 too early [alice, ${dumpId}]\n\n## Disputed\n\n## Move forward\n`;
-    const svc = new FakeService([badOutput, goodOutput]);
+    const bad = goodJson([{ author: "alice", dump_id: "ghost-dump" }]);
+    const good = goodJson([{ author: "alice", dump_id: dumpId }]);
+    const svc = new FakeService([bad, good]);
     const result = await renderSynthesis({
       service: svc,
       project: "acme",
@@ -104,8 +117,12 @@ describe("renderSynthesis", () => {
   });
 
   test("returns ok=false after exhausting retries on persistently bad citations", async () => {
-    const bad = `## Agreed\n- ghost [alice, ghost]\n\n## Disputed\n\n## Move forward\n`;
-    const svc = new FakeService([bad, bad, bad]);
+    const bad = goodJson([{ author: "alice", dump_id: "ghost" }]);
+    // Vary complaints slightly so the same-complaints short-circuit doesn't
+    // break early; three distinct ghost ids => three distinct complaints.
+    const bad2 = goodJson([{ author: "alice", dump_id: "ghost2" }]);
+    const bad3 = goodJson([{ author: "alice", dump_id: "ghost3" }]);
+    const svc = new FakeService([bad, bad2, bad3]);
     const result = await renderSynthesis({
       service: svc,
       project: "acme",
@@ -131,5 +148,30 @@ describe("renderSynthesis", () => {
         inputs: [],
       }),
     ).rejects.toThrow(/no ideas/);
+  });
+});
+
+// T001 / R001 + R002: buildRenderFormat pins citation.author and
+// citation.dump_id to closed enums of the subproject's profiles and dump-ids.
+// Enum-at-the-sampler makes invented authors and hallucinated dump-ids
+// structurally impossible in the model output.
+describe("buildRenderFormat", () => {
+  test("pins author and dump_id to provided enums in every citation object", () => {
+    const profiles = ["Alice", "Bob", "Carol"];
+    const dumpIds = ["dump-alpha-2026-01-01T00-00-00-000z", "dump-beta-2026-01-02T00-00-00-000z"];
+    const schema = buildRenderFormat(profiles, dumpIds) as {
+      properties: {
+        agreed: { items: { properties: { citations: { items: Record<string, unknown> } } } };
+        disputed: { items: { properties: { citations: { items: Record<string, unknown> } } } };
+        move_forward: { items: { properties: { citations: { items: Record<string, unknown> } } } };
+      };
+    };
+    for (const bucket of ["agreed", "disputed", "move_forward"] as const) {
+      const citation = schema.properties[bucket].items.properties.citations.items as {
+        properties: { author: { enum: string[] }; dump_id: { enum: string[] } };
+      };
+      expect(citation.properties.author.enum).toEqual(profiles);
+      expect(citation.properties.dump_id.enum).toEqual(dumpIds);
+    }
   });
 });
