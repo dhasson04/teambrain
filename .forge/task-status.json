@@ -1,85 +1,33 @@
 {
   "tasks": {
-    "T001": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T002": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T003": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T004": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T005": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T006": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T007": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T008": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T009": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T010": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T011": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T012": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T013": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T014": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T015": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    },
-    "T016": {
-      "status": "pending",
-      "completed_at": null,
-      "commit": null
-    }
+    "T001_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "f1f34f6" },
+    "T002_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "b528c58" },
+    "T003_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "756b4c8" },
+    "T004_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "b7496a5" },
+    "T005_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "40362ee" },
+    "T006_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "4c8a1a4" },
+    "T007_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "1cf86eb" },
+    "T008_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "1506aeb" },
+    "T009_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "bfffb94" },
+    "T010_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "1987565" },
+    "T013_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "998d56f", "desc": "validator line-range fix" },
+    "T014_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "b77aa4a", "desc": "ConnectionsTab rewrite with react-force-graph-2d" },
+    "T015_pq": { "status": "complete", "spec": "pipeline-quality", "commit": "0bcd345", "desc": "live-test fixes (suffix-strip tolerance, soft author-warn, graph zoom fix)" },
+
+    "T001_cf": { "status": "complete", "spec": "citation-fidelity", "commit": "eacd935", "desc": "buildRenderFormat factory" },
+    "T002_cf": { "status": "complete", "spec": "citation-fidelity", "commit": "8a6d5b6", "desc": "wire factory into renderSynthesis" },
+    "T003_cf": { "status": "complete", "spec": "citation-fidelity", "commit": "8cec35b", "desc": "drop soft author-warn, keep -iN strip" },
+    "T004_cf": { "status": "complete", "spec": "citation-fidelity", "commit": "3bcb1c6", "desc": "pipeline integration test against Fixture A" },
+
+    "T001_nli": { "status": "complete", "spec": "nli-reboot", "commit": "3166361", "desc": "Ollama + enum JSON replaces transformers.js" },
+    "T002_nli": { "status": "complete", "spec": "nli-reboot", "commit": "8cc3266", "desc": "stance-aware schema + worked-example prompt" },
+    "T003_nli": { "status": "complete", "spec": "nli-reboot", "commit": "414c786", "desc": "promote spike pairs to fixture + test:nli script" },
+    "T004_nli": { "status": "complete", "spec": "nli-reboot", "commit": "436b3c1", "desc": "live-Ollama integration suite (regression + Fixture B)" }
   },
-  "last_updated": "2026-04-17T12:43:36.232Z"
+  "branches": {
+    "forge/pipeline-quality": { "tip": "0bcd345", "status": "merged_into_working_baseline" },
+    "forge/citation-fidelity": { "tip": "3bcb1c6", "off": "0bcd345", "worktree": "C:/dev/teambrain-cf", "status": "ready_to_merge" },
+    "forge/nli-reboot": { "tip": "436b3c1", "off": "0bcd345", "worktree": "C:/dev/teambrain-nli", "status": "ready_to_merge" }
+  },
+  "last_updated": "2026-04-18T18:00:00.000Z"
 }

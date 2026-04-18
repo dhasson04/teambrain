@@ -1,0 +1,29 @@
+{
+  "mcp_servers": {
+    "semantic-scholar": {
+      "command": "uvx",
+      "use_for": "academic paper search, citations, and research discovery"
+    }
+  },
+  "skills": {},
+  "plugins": {},
+  "discovered_at": "2026-04-18T16:22:17.987Z",
+  "cli_tools": {
+    "stripe": {
+      "available": true,
+      "use_for": "payment testing, webhook simulation, and billing",
+      "version": "1.38.1"
+    },
+    "playwright": {
+      "available": true,
+      "use_for": "browser automation and E2E testing",
+      "version": "1.58.2"
+    }
+  },
+  "generated_clis": {},
+  "cli_anything_available": true,
+  "codex": {
+    "available": false,
+    "reason": "Codex CLI not installed"
+  }
+}
